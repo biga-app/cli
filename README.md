@@ -84,6 +84,7 @@ To run your own, see [biga-sh/docker](https://github.com/biga-sh/docker).
 | `biga list` | List known sessions and whether they are live |
 | `biga open [dir]` | Open a folder's session in the browser |
 | `biga stop [dir]` | Stop a folder's session, or every session with `--all` |
+| `biga extensions` | Create, list, or revoke checkpoint feed credentials |
 
 ## Configuration
 
