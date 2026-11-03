@@ -24,7 +24,7 @@ func (a *app) extensionsCmd() *cobra.Command {
 		Short: "Create a read-only checkpoint feed token",
 		Args:  cobra.ExactArgs(1),
 		RunE: a.run(func(ctx context.Context, args []string) error {
-			rec, client, err := a.extensionSession(dir)
+			rec, client, err := a.ownedSession(dir)
 			if err != nil {
 				return err
 			}
@@ -51,7 +51,7 @@ func (a *app) extensionsCmd() *cobra.Command {
 		Short: "List extensions without revealing tokens",
 		Args:  cobra.NoArgs,
 		RunE: a.run(func(ctx context.Context, _ []string) error {
-			rec, client, err := a.extensionSession(dir)
+			rec, client, err := a.ownedSession(dir)
 			if err != nil {
 				return err
 			}
@@ -80,7 +80,7 @@ func (a *app) extensionsCmd() *cobra.Command {
 		Short: "Revoke an extension's checkpoint feed token",
 		Args:  cobra.ExactArgs(1),
 		RunE: a.run(func(ctx context.Context, args []string) error {
-			rec, client, err := a.extensionSession(dir)
+			rec, client, err := a.ownedSession(dir)
 			if err != nil {
 				return err
 			}
@@ -91,7 +91,7 @@ func (a *app) extensionsCmd() *cobra.Command {
 	return cmd
 }
 
-func (a *app) extensionSession(dir string) (session.Record, *api.Client, error) {
+func (a *app) ownedSession(dir string) (session.Record, *api.Client, error) {
 	target, err := targetDir(dir, nil)
 	if err != nil {
 		return session.Record{}, nil, err
