@@ -9,9 +9,7 @@ import (
 	"io/fs"
 	"maps"
 	"net/http"
-	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -140,19 +138,7 @@ func (b *Broadcast) read(rel string) fileState {
 	if !b.filter.Accepts(rel, false) {
 		return fileState{rel: rel}
 	}
-	abs := filepath.Join(b.opts.RootDir, filepath.FromSlash(rel))
-	info, err := os.Lstat(abs)
-	if err != nil && !errors.Is(err, fs.ErrPermission) {
-		// Missing, or a parent was replaced by a file: either way it is gone.
-		return fileState{rel: rel}
-	}
-	if err != nil {
-		return fileState{rel: rel, err: err}
-	}
-	if !info.Mode().IsRegular() {
-		return fileState{rel: rel}
-	}
-	f, err := snapshot.ReadFile(abs, rel)
+	f, err := snapshot.ReadFile(b.root, rel)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fileState{rel: rel}
 	}

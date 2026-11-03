@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,10 +25,10 @@ const ReadConcurrency = 16
 //
 // Symlinks and special files are skipped: following links risks cycles and
 // escaping the root.
-func Build(ctx context.Context, root string, filter *ignore.Filter, onSkip func(rel string, err error)) (*api.FileNode, error) {
-	tree := &api.FileNode{Type: api.NodeDirectory, Name: filepath.Base(root), Path: "."}
+func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, onSkip func(rel string, err error)) (*api.FileNode, error) {
+	tree := &api.FileNode{Type: api.NodeDirectory, Name: filepath.Base(root.Name()), Path: "."}
 	var files []*fileJob
-	if err := walk(root, "", tree, filter, &files); err != nil {
+	if err := walk(root.FS(), tree, filter, &files); err != nil {
 		return nil, err
 	}
 
@@ -40,7 +41,7 @@ func Build(ctx context.Context, root string, filter *ignore.Filter, onSkip func(
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			f, err := ReadFile(job.abs, job.node.Path)
+			f, err := ReadFile(root, job.node.Path)
 			if err != nil {
 				job.err = err
 				return nil
@@ -70,15 +71,14 @@ func Build(ctx context.Context, root string, filter *ignore.Filter, onSkip func(
 
 type fileJob struct {
 	node *api.FileNode
-	abs  string
 	err  error
 }
 
-func walk(abs, rel string, dir *api.FileNode, filter *ignore.Filter, files *[]*fileJob) error {
-	entries, err := os.ReadDir(abs)
+func walk(root fs.FS, dir *api.FileNode, filter *ignore.Filter, files *[]*fileJob) error {
+	entries, err := fs.ReadDir(root, dir.Path)
 	if err != nil {
-		if rel == "" {
-			return fmt.Errorf("read %s: %w", abs, err)
+		if dir.Path == "." {
+			return fmt.Errorf("read share root: %w", err)
 		}
 		// An unreadable subdirectory shows up empty rather than failing the
 		// whole broadcast.
@@ -87,8 +87,10 @@ func walk(abs, rel string, dir *api.FileNode, filter *ignore.Filter, files *[]*f
 
 	for _, entry := range entries {
 		name := entry.Name()
-		childAbs := filepath.Join(abs, name)
-		childRel := join(rel, name)
+		childRel := name
+		if dir.Path != "." {
+			childRel = dir.Path + "/" + name
+		}
 
 		switch {
 		case entry.IsDir() && ignore.IsStubDir(name):
@@ -102,7 +104,7 @@ func walk(abs, rel string, dir *api.FileNode, filter *ignore.Filter, files *[]*f
 				continue
 			}
 			child := &api.FileNode{Type: api.NodeDirectory, Name: name, Path: childRel}
-			if err := walk(childAbs, childRel, child, filter, files); err != nil {
+			if err := walk(root, child, filter, files); err != nil {
 				return err
 			}
 			dir.Children = append(dir.Children, child)
@@ -112,7 +114,7 @@ func walk(abs, rel string, dir *api.FileNode, filter *ignore.Filter, files *[]*f
 			}
 			child := &api.FileNode{Type: api.NodeFile, Name: name, Path: childRel}
 			dir.Children = append(dir.Children, child)
-			*files = append(*files, &fileJob{node: child, abs: childAbs})
+			*files = append(*files, &fileJob{node: child})
 		}
 	}
 	return nil
@@ -125,13 +127,6 @@ func prune(dir *api.FileNode, drop map[*api.FileNode]bool) {
 			prune(child, drop)
 		}
 	}
-}
-
-func join(dir, name string) string {
-	if dir == "" {
-		return name
-	}
-	return dir + "/" + name
 }
 
 // Hashes indexes every file in the tree by path.

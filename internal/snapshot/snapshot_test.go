@@ -2,6 +2,8 @@ package snapshot
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,11 +33,21 @@ func build(t *testing.T, root string) *api.FileNode {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := Build(t.Context(), root, filter, nil)
+	tree, err := Build(t.Context(), openRoot(t, root), filter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return tree
+}
+
+func openRoot(t *testing.T, path string) *os.Root {
+	t.Helper()
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	return root
 }
 
 func index(tree *api.FileNode) map[string]*api.FileNode {
@@ -118,7 +130,7 @@ func TestBuildSkipsUnreadableFiles(t *testing.T) {
 
 	filter, _ := ignore.NewFilter(root)
 	var skipped []string
-	tree, err := Build(t.Context(), root, filter, func(rel string, _ error) { skipped = append(skipped, rel) })
+	tree, err := Build(t.Context(), openRoot(t, root), filter, func(rel string, _ error) { skipped = append(skipped, rel) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,10 +143,28 @@ func TestBuildSkipsUnreadableFiles(t *testing.T) {
 	}
 }
 
-func TestBuildFailsOnMissingRoot(t *testing.T) {
-	filter, _ := ignore.NewFilter(t.TempDir())
-	if _, err := Build(t.Context(), filepath.Join(t.TempDir(), "nope"), filter, nil); err == nil {
-		t.Fatal("Build succeeded for a missing root")
+func TestReadFileSkipsSymlinks(t *testing.T) {
+	path := t.TempDir()
+	outside := t.TempDir()
+	writeFiles(t, path, map[string]string{"shared/a.txt": "included"})
+	writeFiles(t, outside, map[string]string{"a.txt": "outside"})
+	for name, target := range map[string]string{
+		"external": outside,
+		"internal": "shared",
+		"file.txt": filepath.Join(outside, "a.txt"),
+	} {
+		if err := os.Symlink(target, filepath.Join(path, name)); err != nil {
+			if runtime.GOOS == "windows" {
+				t.Skip("creating symlinks requires permission")
+			}
+			t.Fatal(err)
+		}
+	}
+	root := openRoot(t, path)
+	for _, rel := range []string{"external/a.txt", "internal/a.txt", "file.txt"} {
+		if _, err := ReadFile(root, rel); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("ReadFile(%q) returned %v, want not found", rel, err)
+		}
 	}
 }
 

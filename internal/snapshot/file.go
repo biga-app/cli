@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 )
@@ -31,18 +33,41 @@ type File struct {
 	Oversize bool
 }
 
-// ReadFile reads and hashes the file at abs; rel is its slash-separated path
-// relative to the broadcast root.
-//
-// Binary files (any NUL byte, git's heuristic) and oversize files are hashed
-// but their bytes are never embedded: the server stores content in text
-// columns that reject NUL bytes.
-func ReadFile(abs, rel string) (File, error) {
-	f, err := os.Open(abs)
+func ReadFile(root *os.Root, rel string) (File, error) {
+	name, err := filepath.Localize(rel)
+	if err != nil {
+		return File{}, err
+	}
+	var parent string
+	for part := range strings.SplitSeq(filepath.Dir(name), string(filepath.Separator)) {
+		parent = filepath.Join(parent, part)
+		info, err := root.Lstat(parent)
+		if err != nil {
+			return File{}, err
+		}
+		if !info.IsDir() {
+			return File{}, fs.ErrNotExist
+		}
+	}
+	info, err := root.Lstat(name)
+	if err != nil {
+		return File{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return File{}, fs.ErrNotExist
+	}
+	f, err := root.Open(name)
 	if err != nil {
 		return File{}, err
 	}
 	defer f.Close()
+	info, err = f.Stat()
+	if err != nil {
+		return File{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return File{}, fs.ErrNotExist
+	}
 
 	// Reading one byte past the limit detects oversize files without trusting
 	// a size from stat that may be stale by the time the read happens.

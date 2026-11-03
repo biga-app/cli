@@ -126,6 +126,7 @@ type Broadcast struct {
 	shareLink string
 
 	filter  *ignore.Filter
+	root    *os.Root
 	watcher *watch.Watcher
 	batcher *watch.Batcher
 
@@ -281,6 +282,9 @@ func (b *Broadcast) Start(ctx context.Context) (res Result, err error) {
 	if b.filter, err = ignore.NewFilter(b.opts.RootDir, b.opts.ExcludesFile); err != nil {
 		return Result{}, err
 	}
+	if b.root, err = os.OpenRoot(b.opts.RootDir); err != nil {
+		return Result{}, err
+	}
 
 	// Watch before reading the tree, so edits made during the initial upload
 	// are queued rather than lost. The batcher holds them until it starts.
@@ -297,7 +301,7 @@ func (b *Broadcast) Start(ctx context.Context) (res Result, err error) {
 	}
 
 	b.events.Progress("Scanning files…")
-	tree, err := snapshot.Build(ctx, b.opts.RootDir, b.filter, func(rel string, err error) {
+	tree, err := snapshot.Build(ctx, b.root, b.filter, func(rel string, err error) {
 		b.events.Warn(fmt.Sprintf("Skipped %s: %v", rel, err))
 	})
 	if err != nil {
@@ -377,6 +381,9 @@ func (b *Broadcast) abort() {
 	if b.batcher != nil {
 		b.batcher.Close()
 	}
+	if b.root != nil {
+		_ = b.root.Close()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = b.opts.Client.EndSession(ctx, b.sessionID, b.token())
@@ -402,6 +409,7 @@ func (b *Broadcast) shutdown(ctx context.Context) error {
 	b.loops.Wait()
 	b.watcher.Close()
 	b.batcher.Close()
+	_ = b.root.Close()
 	b.cancelFlush()
 
 	if err := b.persist(false); err != nil {

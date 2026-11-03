@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -271,6 +272,38 @@ func eventually(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func TestBroadcastDeletesFilesUnderReplacedDirectory(t *testing.T) {
+	const rel = "shared/a.txt"
+	h := newHarness(t, map[string]string{rel: "included"})
+	h.opts.Timing.Idle = 250 * time.Millisecond
+	h.start()
+
+	outside := t.TempDir()
+	write(t, outside, "a.txt", "outside")
+	dir := filepath.Join(h.root, "shared")
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, dir); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skip("creating symlinks requires permission")
+		}
+		t.Fatal(err)
+	}
+	eventually(t, "checkpoint for the replaced directory", func() bool {
+		return h.server.changes()[rel] != ""
+	})
+	h.server.with(func(s *fakeServer) {
+		for _, checkpoint := range s.checkpoints {
+			for _, entry := range checkpoint.Entries {
+				if entry.Path == rel && entry.ChangeType != api.ChangeDeleted {
+					t.Errorf("got %s for %s, want deletion", entry.ChangeType, rel)
+				}
+			}
+		}
+	})
 }
 
 func TestBroadcastStreamsChanges(t *testing.T) {
