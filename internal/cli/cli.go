@@ -106,7 +106,7 @@ Run biga without a command in a terminal to pick one interactively.`,
 	}
 	root.PersistentFlags().StringVar(&a.apiURL, "api-url", "",
 		fmt.Sprintf("server to use (default $%s or %s)", config.EnvAPIURL, config.DefaultAPIURL))
-	root.AddCommand(a.startCmd(), a.listCmd(), a.statusCmd(), a.stopCmd(), a.openCmd(), a.extensionsCmd())
+	root.AddCommand(a.startCmd(), a.listCmd(), a.statusCmd(), a.stopCmd(), a.openCmd(), a.extensionsCmd(), a.checkpointCmd())
 	return root
 }
 
