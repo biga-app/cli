@@ -1,7 +1,6 @@
 package broadcast
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,7 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/biga-app/cli/internal/api"
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 	"github.com/biga-app/cli/internal/config"
 	"github.com/biga-app/cli/internal/session"
 )
@@ -87,32 +89,28 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.tokens[id] = token
 		s.upserts++
 		s.ended = false
-		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, `{"ok":true,"data":{"id":%q,"title":"t","status":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","endedAt":null,"token":%q}}`, id, token)
+		writeProto(w, http.StatusCreated, sessionGrant(id, token))
 		return
 	}
 	switch got := r.Header.Get("Authorization"); {
 	case exists && token == "":
 		s.authFailures++
-		w.WriteHeader(http.StatusForbidden)
-		io.WriteString(w, `{"ok":false,"error":{"code":"session_locked","message":"locked"}}`)
+		writeError(w, http.StatusForbidden, "session_locked", "locked")
 		return
 	case got == "":
 		s.authFailures++
-		w.WriteHeader(http.StatusUnauthorized)
-		io.WriteString(w, `{"ok":false,"error":{"code":"unauthorized","message":"token required"}}`)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "token required")
 		return
 	case got != "Bearer "+token:
 		s.authFailures++
-		w.WriteHeader(http.StatusForbidden)
-		io.WriteString(w, `{"ok":false,"error":{"code":"forbidden","message":"wrong token"}}`)
+		writeError(w, http.StatusForbidden, "forbidden", "wrong token")
 		return
 	}
 	switch {
 	case r.Method == http.MethodPut && action == "":
 		s.upserts++
 		s.ended = false
-		fmt.Fprintf(w, `{"ok":true,"data":{"id":%q,"title":"t","status":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","endedAt":null}}`, id)
+		writeProto(w, http.StatusOK, sessionGrant(id, ""))
 	case r.Method == http.MethodDelete && action == "":
 		s.ended = true
 		w.WriteHeader(http.StatusNoContent)
@@ -120,13 +118,15 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.heartbeats++
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && action == "manifest":
-		json.NewEncoder(w).Encode(map[string]any{"ok": true, "data": api.Manifest{Files: s.manifest}})
-	case r.Method == http.MethodPost && action == "snapshot":
-		var body snapshotBody
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			s.t.Errorf("decode snapshot: %v", err)
+		files := make([]*bigav1.ManifestEntry, len(s.manifest))
+		for i, f := range s.manifest {
+			files[i] = &bigav1.ManifestEntry{Path: f.Path, Hash: f.Hash, Size: f.Size, Binary: f.Binary}
 		}
-		s.snapshots = append(s.snapshots, body)
+		writeProto(w, http.StatusOK, &bigav1.Manifest{Files: files})
+	case r.Method == http.MethodPost && action == "snapshot":
+		var msg bigav1.FileSnapshot
+		readProto(s.t, r, &msg)
+		s.snapshots = append(s.snapshots, snapshotBody{SessionID: msg.GetSessionId(), Tree: treeFromPB(msg.GetTree())})
 		w.WriteHeader(http.StatusAccepted)
 	case r.Method == http.MethodPost && action == "checkpoint":
 		if s.failNext > 0 {
@@ -134,16 +134,80 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(s.failStatus)
 			return
 		}
-		var body api.CheckpointUpload
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			s.t.Errorf("decode checkpoint: %v", err)
-		}
-		s.checkpoints = append(s.checkpoints, body)
+		var msg bigav1.CheckpointUpload
+		readProto(s.t, r, &msg)
+		s.checkpoints = append(s.checkpoints, uploadFromPB(&msg))
 		w.WriteHeader(http.StatusAccepted)
 	default:
 		s.t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		http.NotFound(w, r)
 	}
+}
+
+func readProto(t *testing.T, r *http.Request, m proto.Message) {
+	t.Helper()
+	if ct := r.Header.Get("Content-Type"); ct != "application/x-protobuf" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Errorf("read body: %v", err)
+		return
+	}
+	if err := proto.Unmarshal(data, m); err != nil {
+		t.Errorf("decode %T: %v", m, err)
+	}
+}
+
+func writeProto(w http.ResponseWriter, status int, m proto.Message) {
+	data, _ := proto.Marshal(m)
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.WriteHeader(status)
+	w.Write(data)
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeProto(w, status, &bigav1.Error{Code: code, Message: message})
+}
+
+func sessionGrant(id, token string) *bigav1.SessionGrant {
+	return &bigav1.SessionGrant{
+		Session: &bigav1.Session{
+			Id: id, Title: "t", Status: bigav1.SessionStatus_SESSION_STATUS_ACTIVE,
+			CreatedAt: "2026-01-01T00:00:00.000Z", UpdatedAt: "2026-01-01T00:00:00.000Z",
+		},
+		Token: token,
+	}
+}
+
+func treeFromPB(n *bigav1.FileNode) treeNode {
+	out := treeNode{Name: n.GetName(), Path: n.GetPath()}
+	if f := n.GetFile(); f != nil {
+		out.Type, out.Size, out.Hash, out.Binary, out.Content = "file", f.GetSize(), f.GetHash(), f.GetBinary(), string(f.GetContent())
+		return out
+	}
+	out.Type, out.Ignored = "directory", n.GetDirectory().GetIgnored()
+	for _, child := range n.GetDirectory().GetChildren() {
+		out.Children = append(out.Children, treeFromPB(child))
+	}
+	return out
+}
+
+var changeTypes = map[bigav1.ChangeType]api.ChangeType{
+	bigav1.ChangeType_CHANGE_TYPE_ADDED:    api.ChangeAdded,
+	bigav1.ChangeType_CHANGE_TYPE_MODIFIED: api.ChangeModified,
+	bigav1.ChangeType_CHANGE_TYPE_DELETED:  api.ChangeDeleted,
+}
+
+func uploadFromPB(u *bigav1.CheckpointUpload) api.CheckpointUpload {
+	out := api.CheckpointUpload{SessionID: u.GetSessionId(), Timestamp: u.GetTimestamp()}
+	for _, e := range u.GetEntries() {
+		out.Entries = append(out.Entries, api.CheckpointEntry{
+			Path: e.GetPath(), ChangeType: changeTypes[e.GetChangeType()], Hash: e.Hash,
+			Size: e.GetSize(), Binary: e.GetBinary(), Content: string(e.GetContent()),
+		})
+	}
+	return out
 }
 
 // changes flattens every checkpoint entry received so far into path→type.

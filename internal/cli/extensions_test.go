@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,9 +8,19 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 	"github.com/biga-app/cli/internal/session"
 	"github.com/biga-app/cli/internal/ui"
 )
+
+func reply(w http.ResponseWriter, status int, m proto.Message) {
+	data, _ := proto.Marshal(m)
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.WriteHeader(status)
+	w.Write(data)
+}
 
 func TestExtensionCommandsUseSavedSessionOwner(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,14 +32,16 @@ func TestExtensionCommandsUseSavedSessionOwner(t *testing.T) {
 		}
 		switch r.Method + " " + r.URL.Path {
 		case "POST /api/sessions/sample/extensions":
-			var body struct{ Name string }
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name != "Build monitor" {
+			var body bigav1.CreateExtensionRequest
+			data, _ := io.ReadAll(r.Body)
+			if err := proto.Unmarshal(data, &body); err != nil || body.GetName() != "Build monitor" {
 				t.Error("incorrect extension creation payload")
 			}
-			w.WriteHeader(http.StatusCreated)
-			io.WriteString(w, `{"ok":true,"data":{"id":"extension-id","name":"Build monitor","token":"synthetic-extension-token"}}`)
+			reply(w, http.StatusCreated, &bigav1.ExtensionGrant{
+				Extension: &bigav1.Extension{Id: "extension-id", Name: "Build monitor"}, Token: "synthetic-extension-token",
+			})
 		case "GET /api/sessions/sample/extensions":
-			io.WriteString(w, `{"ok":true,"data":{"extensions":[{"id":"extension-id","name":"Build monitor"}]}}`)
+			reply(w, http.StatusOK, &bigav1.ListExtensionsResponse{Extensions: []*bigav1.Extension{{Id: "extension-id", Name: "Build monitor"}}})
 		case "DELETE /api/sessions/sample/extensions/extension-id":
 			w.WriteHeader(http.StatusNoContent)
 		default:

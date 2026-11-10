@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/biga-app/cli/internal/secrets"
 )
@@ -116,12 +115,7 @@ func ReadFile(root *os.Root, rel string, opts ReadOptions) (File, error) {
 		}
 	}
 
-	content := string(data)
-	if !utf8.ValidString(content) {
-		// JSON can only carry valid UTF-8, so hash exactly what is sent.
-		content = strings.ToValidUTF8(content, "�")
-	}
-	return File{Size: int64(len(data)), Hash: hashString(content), Content: content}, nil
+	return File{Size: int64(len(data)), Hash: hashBytes(data), Content: string(data)}, nil
 }
 
 func hashBytes(b []byte) string {

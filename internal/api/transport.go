@@ -10,10 +10,21 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
+
+	"google.golang.org/protobuf/proto"
+
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
+
+const protoType = "application/x-protobuf"
+
+// ErrOlderServer means the server answered in JSON, which only servers from
+// before the protobuf wire do.
+var ErrOlderServer = errors.New("this server is older than this version of biga and does not speak protobuf; update the server or install an older biga")
 
 const (
 	defaultAttempts = 4
@@ -43,10 +54,16 @@ type body struct {
 	gzip bool
 }
 
+// response is a successful answer: its body and headers.
+type response struct {
+	data   []byte
+	header http.Header
+}
+
 // do sends a request, retrying network errors, 429s, and 5xx responses with
 // jittered exponential backoff, and decodes the response into out. It returns
 // the size of the request body as sent.
-func (c *Client) do(ctx context.Context, method, route string, in, out any, opts request) (int, error) {
+func (c *Client) do(ctx context.Context, method, route string, in, out proto.Message, opts request) (int, error) {
 	attempts := cmp.Or(opts.attempts, defaultAttempts)
 	timeout := cmp.Or(opts.timeout, defaultTimeout)
 
@@ -65,9 +82,9 @@ func (c *Client) do(ctx context.Context, method, route string, in, out any, opts
 			encoded, allowGzip = true, want
 		}
 
-		data, err := c.attempt(ctx, method, route, b, timeout, opts)
+		res, err := c.attempt(ctx, method, route, b, timeout, opts)
 		if err == nil {
-			return len(b.data), decode(data, out)
+			return len(b.data), decode(res, out)
 		}
 		if b.gzip && HasStatus(err, http.StatusUnsupportedMediaType) {
 			// Something between us and the server rejected compression after
@@ -92,7 +109,7 @@ func (c *Client) do(ctx context.Context, method, route string, in, out any, opts
 	}
 }
 
-func (c *Client) attempt(ctx context.Context, method, route string, b body, timeout time.Duration, opts request) ([]byte, error) {
+func (c *Client) attempt(ctx context.Context, method, route string, b body, timeout time.Duration, opts request) (response, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -105,9 +122,9 @@ func (c *Client) attempt(ctx context.Context, method, route string, b body, time
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+route, reader)
 	if err != nil {
-		return nil, err
+		return response{}, err
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", protoType)
 	req.Header.Set("User-Agent", c.userAgent)
 	if opts.token != "" {
 		req.Header.Set("Authorization", "Bearer "+opts.token)
@@ -117,7 +134,7 @@ func (c *Client) attempt(ctx context.Context, method, route string, b body, time
 	}
 	if b.data != nil {
 		req.ContentLength = int64(len(b.data))
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", protoType)
 		if b.gzip {
 			req.Header.Set("Content-Encoding", "gzip")
 		}
@@ -128,7 +145,7 @@ func (c *Client) attempt(ctx context.Context, method, route string, b body, time
 		if ctx.Err() == nil || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			err = &UnreachableError{URL: c.baseURL, Err: err}
 		}
-		return nil, err
+		return response{}, err
 	}
 	defer resp.Body.Close()
 
@@ -137,14 +154,14 @@ func (c *Client) attempt(ctx context.Context, method, route string, b body, time
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return response{}, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		se := statusError(resp.StatusCode, data)
+		se := statusError(resp.StatusCode, data, resp.Header)
 		se.RetryAfter = parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())
-		return nil, se
+		return response{}, se
 	}
-	return data, nil
+	return response{data: data, header: resp.Header}, nil
 }
 
 func acceptsGzip(h http.Header) bool {
@@ -163,24 +180,21 @@ func acceptsGzip(h http.Header) bool {
 // framing outweighs the savings.
 const minCompressBytes = 1024
 
-// encode serializes v as JSON, gzip-compressed when compress is set and the
-// body is large enough to benefit. HTML characters are left unescaped:
-// escaping "<" as "\u003c" bloats source code for no benefit in an API body.
-func encode(v any, compress bool) (body, error) {
-	var raw bytes.Buffer
-	enc := json.NewEncoder(&raw)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+// encode serializes m as protobuf, gzip-compressed when compress is set and
+// the body is large enough to benefit.
+func encode(m proto.Message, compress bool) (body, error) {
+	raw, err := proto.Marshal(m)
+	if err != nil {
 		return body{}, err
 	}
-	if !compress || raw.Len() < minCompressBytes {
-		return body{data: raw.Bytes()}, nil
+	if !compress || len(raw) < minCompressBytes {
+		return body{data: raw}, nil
 	}
 
 	var buf bytes.Buffer
-	buf.Grow(raw.Len() / 3)
+	buf.Grow(len(raw) / 3)
 	zw := gzip.NewWriter(&buf)
-	if _, err := zw.Write(raw.Bytes()); err != nil {
+	if _, err := zw.Write(raw); err != nil {
 		return body{}, err
 	}
 	if err := zw.Close(); err != nil {
@@ -204,21 +218,35 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// envelope is the server's standard response wrapper.
+// envelope is the JSON error wrapper servers from before the protobuf wire
+// used, and what a proxy in front of the server may still answer with.
 type envelope struct {
-	OK    *bool           `json:"ok"`
-	Data  json.RawMessage `json:"data"`
 	Error *struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-func statusError(status int, data []byte) *StatusError {
+func isProto(h http.Header) bool {
+	mt, _, err := mime.ParseMediaType(h.Get("Content-Type"))
+	return err == nil && mt == protoType
+}
+
+func statusError(status int, data []byte, header http.Header) *StatusError {
 	se := &StatusError{StatusCode: status}
+	if isProto(header) {
+		var e bigav1.Error
+		if proto.Unmarshal(data, &e) == nil {
+			se.Code, se.Message = e.GetCode(), e.GetMessage()
+			return se
+		}
+	}
 	var env envelope
 	if json.Unmarshal(data, &env) == nil && env.Error != nil {
 		se.Code, se.Message = env.Error.Code, env.Error.Message
+		if status == http.StatusUnsupportedMediaType && se.Code == "unsupported_media_type" {
+			se.Message = ErrOlderServer.Error()
+		}
 		return se
 	}
 	msg := strings.TrimSpace(string(data))
@@ -229,23 +257,16 @@ func statusError(status int, data []byte) *StatusError {
 	return se
 }
 
-// decode unwraps an {ok, data} envelope when present, and otherwise decodes
-// the body directly, so the client works with servers that answer either way.
-func decode(data []byte, out any) error {
-	if out == nil || len(bytes.TrimSpace(data)) == 0 {
+// decode reads a successful response into out, which may be nil when the
+// caller expects no body.
+func decode(res response, out proto.Message) error {
+	if out == nil || len(res.data) == 0 {
 		return nil
 	}
-	var env envelope
-	if err := json.Unmarshal(data, &env); err == nil && env.OK != nil {
-		if !*env.OK {
-			if env.Error != nil {
-				return errors.New(env.Error.Message)
-			}
-			return errors.New("server reported a failure")
-		}
-		data = env.Data
+	if !isProto(res.header) {
+		return ErrOlderServer
 	}
-	if err := json.Unmarshal(data, out); err != nil {
+	if err := proto.Unmarshal(res.data, out); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil

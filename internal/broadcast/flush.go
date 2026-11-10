@@ -3,7 +3,6 @@ package broadcast
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -256,7 +255,7 @@ func chunk(entries []api.CheckpointEntry, limit int) [][]api.CheckpointEntry {
 	var current []api.CheckpointEntry
 	size := 0
 	for _, e := range entries {
-		n := encodedSize(e)
+		n := e.EncodedSize()
 		if len(current) > 0 && size+n > limit {
 			chunks = append(chunks, current)
 			current, size = nil, 0
@@ -268,23 +267,6 @@ func chunk(entries []api.CheckpointEntry, limit int) [][]api.CheckpointEntry {
 		chunks = append(chunks, current)
 	}
 	return chunks
-}
-
-// encodedSize is the entry's size in the uncompressed request body, which is
-// what the server's limit applies to.
-func encodedSize(e api.CheckpointEntry) int {
-	var w countingWriter
-	enc := json.NewEncoder(&w)
-	enc.SetEscapeHTML(false) // as the client encodes it
-	_ = enc.Encode(e)        // writes to w cannot fail
-	return int(w)
-}
-
-type countingWriter int
-
-func (w *countingWriter) Write(p []byte) (int, error) {
-	*w += countingWriter(len(p))
-	return len(p), nil
 }
 
 func dedupe(paths []string) []string {

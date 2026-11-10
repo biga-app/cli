@@ -3,7 +3,6 @@ package api
 import (
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -13,7 +12,49 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
+
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
+
+func reply(w http.ResponseWriter, status int, m proto.Message) {
+	data, _ := proto.Marshal(m)
+	w.Header().Set("Content-Type", protoType)
+	w.WriteHeader(status)
+	w.Write(data)
+}
+
+func replyError(w http.ResponseWriter, status int, code, message string) {
+	reply(w, status, &bigav1.Error{Code: code, Message: message})
+}
+
+func grantFor(id, token string) *bigav1.SessionGrant {
+	return &bigav1.SessionGrant{
+		Session: &bigav1.Session{
+			Id: id, Title: "t", Status: bigav1.SessionStatus_SESSION_STATUS_ACTIVE,
+			CreatedAt: "2026-01-01T00:00:00.000Z", UpdatedAt: "2026-01-01T00:00:00.000Z",
+		},
+		Token: token,
+	}
+}
+
+func readMessage(t *testing.T, r *http.Request, m proto.Message) {
+	t.Helper()
+	if ct := r.Header.Get("Content-Type"); ct != protoType {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	if accept := r.Header.Get("Accept"); accept != protoType {
+		t.Errorf("Accept = %q", accept)
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proto.Unmarshal(data, m); err != nil {
+		t.Fatalf("decode %T: %v", m, err)
+	}
+}
 
 func newTestClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
@@ -22,7 +63,7 @@ func newTestClient(t *testing.T, h http.HandlerFunc) *Client {
 	return New(srv.URL+"/", WithUserAgent("biga-test"), WithBackoff(func(int) time.Duration { return time.Millisecond }))
 }
 
-func TestEnsureSessionUnwrapsEnvelope(t *testing.T) {
+func TestEnsureSessionSendsAndReadsProtobuf(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/api/sessions/abc" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -30,39 +71,75 @@ func TestEnsureSessionUnwrapsEnvelope(t *testing.T) {
 		if got := r.Header.Get("User-Agent"); got != "biga-test" {
 			t.Errorf("User-Agent = %q", got)
 		}
-		var in CreateSessionInput
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title != "demo" {
-			t.Errorf("body = %+v, %v", in, err)
+		var in bigav1.PutSessionRequest
+		readMessage(t, r, &in)
+		if in.GetTitle() != "demo" || in.GroupId != nil {
+			t.Errorf("body = %+v", &in)
 		}
-		io.WriteString(w, `{"ok":true,"data":{"id":"abc","title":"demo","status":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","endedAt":null}}`)
+		reply(w, http.StatusOK, grantFor("abc", ""))
 	})
 
 	s, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{Title: "demo"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.ID != "abc" || s.Status != "active" {
+	if s.ID != "abc" || s.Status != "active" || s.CreatedAt.Year() != 2026 || s.EndedAt != nil {
 		t.Errorf("session = %+v", s)
 	}
 }
 
-func TestEnsureSessionAcceptsBareResponse(t *testing.T) {
+func TestJSONSuccessMeansAnOlderServer(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"id":"abc","title":"t","status":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","endedAt":null}`)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"data":{"id":"abc"}}`)
 	})
-	s, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s.ID != "abc" {
-		t.Errorf("ID = %q", s.ID)
+	if _, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{}); !errors.Is(err, ErrOlderServer) {
+		t.Fatalf("err = %v, want ErrOlderServer", err)
 	}
 }
 
-func TestStatusErrorUsesEnvelopeMessage(t *testing.T) {
+func TestOlderServerRejectionIsExplained(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusConflict)
-		io.WriteString(w, `{"ok":false,"error":{"code":"inactive_session","message":"Session has ended."}}`)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		io.WriteString(w, `{"ok":false,"error":{"code":"unsupported_media_type","message":"Content-Type must be application/json."}}`)
+	})
+	_, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{})
+	se, ok := errors.AsType[*StatusError](err)
+	if !ok || se.Code != "unsupported_media_type" || !strings.Contains(se.Message, "older") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEnsureSessionRejectsBadTimestamps(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		g := grantFor("abc", "")
+		g.Session.CreatedAt = "yesterday"
+		reply(w, http.StatusOK, g)
+	})
+	if _, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{}); err == nil || !strings.Contains(err.Error(), "createdAt") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEnsureSessionDecodesEndedAndGroup(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		g := grantFor("abc", "")
+		g.Session.EndedAt, g.Session.GroupId = new("2026-02-01T00:00:00.000Z"), new("ws1")
+		reply(w, http.StatusOK, g)
+	})
+	s, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{GroupID: "ws1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.EndedAt == nil || s.EndedAt.Month() != 2 || s.GroupID == nil || *s.GroupID != "ws1" {
+		t.Errorf("session = %+v", s)
+	}
+}
+
+func TestStatusErrorUsesTheErrorMessage(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		replyError(w, http.StatusConflict, "inactive_session", "Session has ended.")
 	})
 	err := c.Heartbeat(t.Context(), "abc", "")
 	se, ok := errors.AsType[*StatusError](err)
@@ -168,59 +245,75 @@ func TestPushCheckpointValidatesLocally(t *testing.T) {
 	}
 }
 
-func TestCheckpointEntryJSON(t *testing.T) {
+func TestCheckpointEntryToPB(t *testing.T) {
 	hash := strings.Repeat("a", 64)
 	tests := []struct {
 		name  string
 		entry CheckpointEntry
-		want  string
+		want  *bigav1.CheckpointEntry
 	}{
 		{
 			"text",
 			CheckpointEntry{Path: "a.txt", ChangeType: ChangeModified, Hash: &hash, Size: 2, Content: "hi"},
-			`{"path":"a.txt","changeType":"modified","hash":"` + hash + `","size":2,"content":"hi"}`,
+			&bigav1.CheckpointEntry{Path: "a.txt", ChangeType: bigav1.ChangeType_CHANGE_TYPE_MODIFIED, Hash: &hash, Size: 2, Content: []byte("hi")},
 		},
 		{
 			"binary",
 			CheckpointEntry{Path: "a.png", ChangeType: ChangeAdded, Hash: &hash, Size: 9, Binary: true},
-			`{"path":"a.png","changeType":"added","hash":"` + hash + `","size":9,"binary":true}`,
+			&bigav1.CheckpointEntry{Path: "a.png", ChangeType: bigav1.ChangeType_CHANGE_TYPE_ADDED, Hash: &hash, Size: 9, Binary: true},
 		},
 		{
 			"deleted",
 			CheckpointEntry{Path: "a.txt", ChangeType: ChangeDeleted},
-			`{"path":"a.txt","changeType":"deleted","hash":null,"size":0}`,
+			&bigav1.CheckpointEntry{Path: "a.txt", ChangeType: bigav1.ChangeType_CHANGE_TYPE_DELETED},
+		},
+		{
+			"bytes that are not UTF-8 survive",
+			CheckpointEntry{Path: "a.txt", ChangeType: ChangeAdded, Hash: &hash, Size: 3, Content: "a\xffb"},
+			&bigav1.CheckpointEntry{Path: "a.txt", ChangeType: bigav1.ChangeType_CHANGE_TYPE_ADDED, Hash: &hash, Size: 3, Content: []byte("a\xffb")},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := json.Marshal(tt.entry)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got) != tt.want {
-				t.Errorf("got  %s\nwant %s", got, tt.want)
+			if got := entryToPB(tt.entry); !proto.Equal(got, tt.want) {
+				t.Errorf("got  %v\nwant %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestFileNodeJSON(t *testing.T) {
-	tree := &FileNode{
+func TestEncodedSizeMatchesTheUploadBody(t *testing.T) {
+	up := validUpload()
+	up.Entries = append(up.Entries, CheckpointEntry{Path: "b.txt", ChangeType: ChangeDeleted}, CheckpointEntry{Path: strings.Repeat("p/", 200) + "c", ChangeType: ChangeAdded, Hash: up.Entries[0].Hash, Content: strings.Repeat("x", 70_000)})
+	msg := uploadToPB(up)
+	header := proto.Size(&bigav1.CheckpointUpload{SessionId: msg.SessionId, Timestamp: msg.Timestamp})
+	sum := header
+	for _, e := range up.Entries {
+		sum += e.EncodedSize()
+	}
+	if got := proto.Size(msg); got != sum {
+		t.Errorf("body is %d bytes, entries add up to %d", got, sum)
+	}
+}
+
+func TestSnapshotToPBKeepsTheTree(t *testing.T) {
+	snap := &FileSnapshot{SessionID: "abc", Timestamp: 7, SequenceNum: 2, Tree: &FileNode{
 		Type: NodeDirectory, Name: "root", Path: ".",
 		Children: []*FileNode{
 			{Type: NodeFile, Name: "empty.txt", Path: "empty.txt", Hash: "h"},
 			{Type: NodeDirectory, Name: "dist", Path: "dist", Ignored: true},
 		},
+	}}
+	got := snapshotToPB(snap)
+	children := got.GetTree().GetDirectory().GetChildren()
+	if got.GetSessionId() != "abc" || got.GetTimestamp() != 7 || got.GetSequenceNum() != 2 || len(children) != 2 {
+		t.Fatalf("snapshot = %v", got)
 	}
-	got, err := json.Marshal(tree)
-	if err != nil {
-		t.Fatal(err)
+	if f := children[0].GetFile(); f == nil || f.GetHash() != "h" || len(f.GetContent()) != 0 {
+		t.Errorf("file = %v", children[0])
 	}
-	want := `{"type":"directory","name":"root","path":".","children":[` +
-		`{"type":"file","name":"empty.txt","path":"empty.txt","size":0,"hash":"h","content":""},` +
-		`{"type":"directory","name":"dist","path":"dist","children":[],"ignored":true}]}`
-	if string(got) != want {
-		t.Errorf("got  %s\nwant %s", got, want)
+	if d := children[1].GetDirectory(); d == nil || !d.GetIgnored() || len(d.GetChildren()) != 0 {
+		t.Errorf("stub = %v", children[1])
 	}
 }
 
@@ -261,7 +354,7 @@ func TestCompressesOnceServerAdvertisesGzip(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			w.Header().Set("Accept-Encoding", "br, gzip;q=1")
-			io.WriteString(w, `{"ok":true,"data":{"id":"abc","title":"t","status":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","endedAt":null}}`)
+			reply(w, http.StatusOK, grantFor("abc", ""))
 			return
 		}
 		body, gz := readBody(t, r)
@@ -427,8 +520,9 @@ func TestCredentialsAreSent(t *testing.T) {
 
 func TestEnsureSessionReturnsToken(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusCreated)
-		io.WriteString(w, `{"ok":true,"data":{"id":"abc","title":"t","status":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","endedAt":null,"token":"bgs_x","shareUrl":"https://biga.example/session/abc"}}`)
+		g := grantFor("abc", "bgs_x")
+		g.ShareUrl = "https://biga.example/session/abc"
+		reply(w, http.StatusCreated, g)
 	})
 	s, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{})
 	if err != nil {
@@ -453,8 +547,7 @@ func TestOwnershipAndAccessKeyErrors(t *testing.T) {
 		{http.StatusConflict, "invalid_state", false, false},
 	} {
 		c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(tc.status)
-			io.WriteString(w, `{"ok":false,"error":{"code":"`+tc.code+`","message":"m"}}`)
+			replyError(w, tc.status, tc.code, "m")
 		})
 		err := c.EndSession(t.Context(), "abc", "bgs_x")
 		if IsOwnershipError(err) != tc.ownership || IsAccessKeyError(err) != tc.key {

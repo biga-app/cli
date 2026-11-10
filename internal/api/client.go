@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
 
 // Client talks to a biga server. It is safe for concurrent use.
@@ -77,13 +79,13 @@ func (c *Client) Compressing() bool { return c.gzip.Load() }
 // carries the new token. A session owned by someone else, or created before
 // owner tokens existed, fails with an error [IsOwnershipError] reports.
 func (c *Client) EnsureSession(ctx context.Context, sessionID, token string, in CreateSessionInput) (*Session, error) {
-	var s Session
+	var grant bigav1.SessionGrant
 	// Startup is interactive, so fail fast instead of walking the full backoff
 	// schedule against an unreachable server.
-	if _, err := c.do(ctx, http.MethodPut, sessionPath(sessionID, ""), in, &s, request{attempts: 2, token: token}); err != nil {
+	if _, err := c.do(ctx, http.MethodPut, sessionPath(sessionID, ""), putSessionToPB(in), &grant, request{attempts: 2, token: token}); err != nil {
 		return nil, err
 	}
-	return &s, nil
+	return sessionFromPB(&grant)
 }
 
 // EndSession marks the session as ended.
@@ -102,7 +104,7 @@ func (c *Client) Heartbeat(ctx context.Context, sessionID, token string) error {
 // Manifest fetches the path and hash of every file the server holds for the
 // session, so a rejoining CLI can upload only what changed.
 func (c *Client) Manifest(ctx context.Context, sessionID, token string) (*Manifest, error) {
-	var m Manifest
+	var m bigav1.Manifest
 	_, err := c.do(ctx, http.MethodGet, sessionPath(sessionID, "manifest"), nil, &m, request{attempts: 2, token: token})
 	if HasStatus(err, http.StatusNotFound) {
 		return nil, ErrManifestUnavailable
@@ -110,7 +112,7 @@ func (c *Client) Manifest(ctx context.Context, sessionID, token string) (*Manife
 	if err != nil {
 		return nil, err
 	}
-	return &m, nil
+	return manifestFromPB(&m), nil
 }
 
 // PushCheckpoint uploads one batch of file changes and returns the size of
@@ -119,7 +121,7 @@ func (c *Client) PushCheckpoint(ctx context.Context, token string, u *Checkpoint
 	if err := u.Validate(); err != nil {
 		return 0, fmt.Errorf("invalid checkpoint: %w", err)
 	}
-	return c.do(ctx, http.MethodPost, sessionPath(u.SessionID, "checkpoint"), u, nil, request{compress: true, token: token})
+	return c.do(ctx, http.MethodPost, sessionPath(u.SessionID, "checkpoint"), uploadToPB(u), nil, request{compress: true, token: token})
 }
 
 // UploadSnapshot replaces the session's file tree and returns the size of
@@ -129,7 +131,7 @@ func (c *Client) UploadSnapshot(ctx context.Context, token string, s *FileSnapsh
 	if s.SessionID == "" || s.Tree == nil {
 		return 0, errors.New("invalid snapshot: missing session id or tree")
 	}
-	return c.do(ctx, http.MethodPost, sessionPath(s.SessionID, "snapshot"), s, nil, request{
+	return c.do(ctx, http.MethodPost, sessionPath(s.SessionID, "snapshot"), snapshotToPB(s), nil, request{
 		timeout:  uploadTimeout,
 		compress: true,
 		progress: onProgress,

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -31,7 +30,7 @@ type FileNode struct {
 	Size int64
 	// Hash is the hex SHA-256 the server uses as the content's blob key.
 	Hash string
-	// Content is the UTF-8 text of the file, empty for binary files.
+	// Content is the file's text as stored on disk, empty for binary files.
 	Content string
 	// Binary marks files whose bytes are never uploaded (binary or oversize).
 	Binary bool
@@ -41,44 +40,13 @@ type FileNode struct {
 	Ignored bool
 }
 
-// MarshalJSON encodes the node in the shape the server's discriminated union
-// expects for its type.
-func (n *FileNode) MarshalJSON() ([]byte, error) {
-	switch n.Type {
-	case NodeFile:
-		return json.Marshal(struct {
-			Type    NodeType `json:"type"`
-			Name    string   `json:"name"`
-			Path    string   `json:"path"`
-			Size    int64    `json:"size"`
-			Hash    string   `json:"hash"`
-			Content string   `json:"content"`
-			Binary  bool     `json:"binary,omitzero"`
-		}{n.Type, n.Name, n.Path, n.Size, n.Hash, n.Content, n.Binary})
-	case NodeDirectory:
-		children := n.Children
-		if children == nil {
-			children = []*FileNode{}
-		}
-		return json.Marshal(struct {
-			Type     NodeType    `json:"type"`
-			Name     string      `json:"name"`
-			Path     string      `json:"path"`
-			Children []*FileNode `json:"children"`
-			Ignored  bool        `json:"ignored,omitzero"`
-		}{n.Type, n.Name, n.Path, children, n.Ignored})
-	default:
-		return nil, fmt.Errorf("api: unknown node type %q", n.Type)
-	}
-}
-
 // FileSnapshot is the full tree uploaded when a broadcast starts.
 type FileSnapshot struct {
-	SessionID string    `json:"sessionId"`
-	Tree      *FileNode `json:"tree"`
+	SessionID string
+	Tree      *FileNode
 	// Timestamp is in Unix milliseconds.
-	Timestamp   int64 `json:"timestamp"`
-	SequenceNum int   `json:"sequenceNum"`
+	Timestamp   int64
+	SequenceNum int
 }
 
 // ChangeType describes how a file changed within a checkpoint.
@@ -94,22 +62,22 @@ const (
 // only the new content and its hash; the server resolves the previous version
 // and computes diff stats.
 type CheckpointEntry struct {
-	Path       string     `json:"path"`
-	ChangeType ChangeType `json:"changeType"`
+	Path       string
+	ChangeType ChangeType
 	// Hash is nil for deletions.
-	Hash *string `json:"hash"`
-	Size int64   `json:"size"`
+	Hash *string
+	Size int64
 	// Binary entries carry no content.
-	Binary  bool   `json:"binary,omitzero"`
-	Content string `json:"content,omitzero"`
+	Binary  bool
+	Content string
 }
 
 // CheckpointUpload is one save burst's worth of changes.
 type CheckpointUpload struct {
-	SessionID string            `json:"sessionId"`
-	Entries   []CheckpointEntry `json:"entries"`
+	SessionID string
+	Entries   []CheckpointEntry
 	// Timestamp is in Unix milliseconds.
-	Timestamp int64 `json:"timestamp"`
+	Timestamp int64
 }
 
 // MaxEntryContentBytes caps a single entry's content, independently of the
@@ -167,37 +135,37 @@ func (e *CheckpointEntry) validate() error {
 
 // CreateSessionInput is the body of the idempotent session upsert.
 type CreateSessionInput struct {
-	Title string `json:"title,omitzero"`
+	Title string
 	// GroupID links sessions started together from one workspace file.
-	GroupID string `json:"groupId,omitzero"`
+	GroupID string
 }
 
 // Session is the server's view of a broadcast session.
 type Session struct {
-	ID        string     `json:"id"`
-	Title     string     `json:"title"`
-	Status    string     `json:"status"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	EndedAt   *time.Time `json:"endedAt"`
-	GroupID   *string    `json:"groupId"`
+	ID        string
+	Title     string
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	EndedAt   *time.Time
+	GroupID   *string
 	// Token is the session's owner credential. The server returns it only on
 	// the response that created the session and keeps nothing but a hash, so
 	// it must be saved: every later write needs it.
-	Token string `json:"token"`
+	Token string
 	// ShareURL is the viewer link, when the server knows its public address.
-	ShareURL string `json:"shareUrl"`
+	ShareURL string
 }
 
 // ManifestEntry identifies one file the server currently holds for a session.
 type ManifestEntry struct {
-	Path   string `json:"path"`
-	Hash   string `json:"hash"`
-	Size   int64  `json:"size"`
-	Binary bool   `json:"binary"`
+	Path   string
+	Hash   string
+	Size   int64
+	Binary bool
 }
 
 // Manifest lists every current file of a session, without content.
 type Manifest struct {
-	Files []ManifestEntry `json:"files"`
+	Files []ManifestEntry
 }

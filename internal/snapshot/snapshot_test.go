@@ -110,7 +110,7 @@ func TestBuild(t *testing.T) {
 	if n := nodes["big.txt"]; !n.Binary || n.Content != "" || n.Size != int64(len(big)) {
 		t.Errorf("big.txt = binary %v, size %d", n.Binary, n.Size)
 	}
-	if n := nodes["invalid-utf8.txt"]; n.Content != "ok�ok" || n.Hash != hashString(n.Content) {
+	if n := nodes["invalid-utf8.txt"]; n.Content != "ok\xffok" || n.Hash != hashString("ok\xffok") {
 		t.Errorf("invalid-utf8.txt = %q", n.Content)
 	}
 	for _, stub := range []string{"dist", "pkg/build"} {
