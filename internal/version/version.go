@@ -5,7 +5,7 @@ package version
 // builds can also override it at link time:
 //
 //	go build -ldflags "-X github.com/biga-app/cli/internal/version.version=1.2.3"
-var version = "1.1.0"
+var version = "2.0.0"
 
 // String returns the release version, e.g. "1.0.0".
 func String() string { return version }
