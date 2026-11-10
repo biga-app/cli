@@ -558,3 +558,67 @@ func TestOwnershipAndAccessKeyErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingBlobsAsksAboutHashesAndReadsTheAnswer(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/sessions/abc/blobs/missing" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var in bigav1.MissingBlobsRequest
+		readMessage(t, r, &in)
+		reply(w, http.StatusOK, &bigav1.MissingBlobsResponse{Hashes: in.GetHashes()[1:]})
+	})
+	got, err := c.MissingBlobs(t.Context(), "abc", "bgs_x", []string{"h1", "h2", "h3"})
+	if err != nil || len(got) != 2 || got[0] != "h2" || got[1] != "h3" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
+func TestUploadBlobsSendsContentAndReportsTheBodySize(t *testing.T) {
+	var seen *bigav1.UploadBlobsRequest
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sessions/abc/blobs" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		seen = &bigav1.UploadBlobsRequest{}
+		readMessage(t, r, seen)
+		w.WriteHeader(http.StatusAccepted)
+	})
+	blobs := []Blob{{Hash: strings.Repeat("a", 64), Content: "one\xff"}, {Hash: strings.Repeat("b", 64), Content: "two"}}
+	sent, err := c.UploadBlobs(t.Context(), "abc", "bgs_x", blobs)
+	if err != nil || len(seen.GetBlobs()) != 2 || string(seen.GetBlobs()[0].GetContent()) != "one\xff" {
+		t.Fatalf("sent %d, %v, %v", sent, seen, err)
+	}
+	total := BlobEncodedSize(blobs[0]) + BlobEncodedSize(blobs[1])
+	if sent != total {
+		t.Errorf("a body of %d bytes should be what the blob sizes add up to (%d)", sent, total)
+	}
+	if _, err := c.UploadBlobs(t.Context(), "abc", "bgs_x", nil); err == nil {
+		t.Error("uploading nothing should fail locally")
+	}
+}
+
+func TestSessionLimitsAreDecoded(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		g := grantFor("abc", "")
+		g.Limits = &bigav1.Limits{MaxSnapshotFiles: 50000, MaxFileBytes: 6 << 20, MaxBlobBatchBytes: 8 << 20}
+		reply(w, http.StatusOK, g)
+	})
+	s, err := c.EnsureSession(t.Context(), "abc", "", CreateSessionInput{})
+	if err != nil || s.Limits != (Limits{MaxSnapshotFiles: 50000, MaxFileBytes: 6 << 20, MaxBlobBatchBytes: 8 << 20}) {
+		t.Fatalf("limits = %+v, %v", s, err)
+	}
+}
+
+func TestMissingBlobErrorsAreRecognised(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		replyError(w, http.StatusConflict, "missing_blob", "upload it first")
+	})
+	_, err := c.UploadSnapshot(t.Context(), "bgs_x", &FileSnapshot{SessionID: "abc", Tree: &FileNode{Type: NodeDirectory, Name: "r", Path: "."}}, nil)
+	if !IsMissingBlob(err) || !IsPermanent(err) {
+		t.Fatalf("err = %v", err)
+	}
+	if IsMissingBlob(errors.New("other")) {
+		t.Error("an unrelated error is not a missing blob")
+	}
+}

@@ -100,7 +100,10 @@ func (r *Report) count(g *Group, n *api.FileNode) {
 		}
 		return
 	}
-	size := int64(len(n.Content))
+	size := n.Size
+	if n.Binary {
+		size = 0
+	}
 	g.Files++
 	g.Bytes += size
 	r.Files++

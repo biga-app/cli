@@ -336,19 +336,81 @@ func (x *PutSessionRequest) GetGroupId() string {
 	return ""
 }
 
+// What the server accepts, so a client can fail early with a useful message.
+type Limits struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	MaxSnapshotFiles  int32                  `protobuf:"varint,1,opt,name=max_snapshot_files,json=maxSnapshotFiles,proto3" json:"max_snapshot_files,omitempty"`
+	MaxFileBytes      int64                  `protobuf:"varint,2,opt,name=max_file_bytes,json=maxFileBytes,proto3" json:"max_file_bytes,omitempty"`
+	MaxBlobBatchBytes int64                  `protobuf:"varint,3,opt,name=max_blob_batch_bytes,json=maxBlobBatchBytes,proto3" json:"max_blob_batch_bytes,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *Limits) Reset() {
+	*x = Limits{}
+	mi := &file_biga_v1_biga_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Limits) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Limits) ProtoMessage() {}
+
+func (x *Limits) ProtoReflect() protoreflect.Message {
+	mi := &file_biga_v1_biga_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Limits.ProtoReflect.Descriptor instead.
+func (*Limits) Descriptor() ([]byte, []int) {
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Limits) GetMaxSnapshotFiles() int32 {
+	if x != nil {
+		return x.MaxSnapshotFiles
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxFileBytes() int64 {
+	if x != nil {
+		return x.MaxFileBytes
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxBlobBatchBytes() int64 {
+	if x != nil {
+		return x.MaxBlobBatchBytes
+	}
+	return 0
+}
+
 // token is set only on the response that created the session.
 type SessionGrant struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
 	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
 	ShareUrl      string                 `protobuf:"bytes,3,opt,name=share_url,json=shareUrl,proto3" json:"share_url,omitempty"`
+	Limits        *Limits                `protobuf:"bytes,4,opt,name=limits,proto3" json:"limits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SessionGrant) Reset() {
 	*x = SessionGrant{}
-	mi := &file_biga_v1_biga_proto_msgTypes[2]
+	mi := &file_biga_v1_biga_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -360,7 +422,7 @@ func (x *SessionGrant) String() string {
 func (*SessionGrant) ProtoMessage() {}
 
 func (x *SessionGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[2]
+	mi := &file_biga_v1_biga_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -373,7 +435,7 @@ func (x *SessionGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionGrant.ProtoReflect.Descriptor instead.
 func (*SessionGrant) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{2}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SessionGrant) GetSession() *Session {
@@ -397,6 +459,13 @@ func (x *SessionGrant) GetShareUrl() string {
 	return ""
 }
 
+func (x *SessionGrant) GetLimits() *Limits {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
 // A tree entry. File content is present only in uploads; stored and served
 // trees carry metadata only.
 type FileNode struct {
@@ -414,7 +483,7 @@ type FileNode struct {
 
 func (x *FileNode) Reset() {
 	*x = FileNode{}
-	mi := &file_biga_v1_biga_proto_msgTypes[3]
+	mi := &file_biga_v1_biga_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -426,7 +495,7 @@ func (x *FileNode) String() string {
 func (*FileNode) ProtoMessage() {}
 
 func (x *FileNode) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[3]
+	mi := &file_biga_v1_biga_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -439,7 +508,7 @@ func (x *FileNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileNode.ProtoReflect.Descriptor instead.
 func (*FileNode) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{3}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *FileNode) GetName() string {
@@ -497,6 +566,8 @@ func (*FileNode_File) isFileNode_Kind() {}
 
 func (*FileNode_Directory) isFileNode_Kind() {}
 
+// A snapshot may leave a text file's content out when the server already holds
+// a blob with its hash, uploaded through UploadBlobs.
 type FileInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Size          int64                  `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
@@ -509,7 +580,7 @@ type FileInfo struct {
 
 func (x *FileInfo) Reset() {
 	*x = FileInfo{}
-	mi := &file_biga_v1_biga_proto_msgTypes[4]
+	mi := &file_biga_v1_biga_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -521,7 +592,7 @@ func (x *FileInfo) String() string {
 func (*FileInfo) ProtoMessage() {}
 
 func (x *FileInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[4]
+	mi := &file_biga_v1_biga_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -534,7 +605,7 @@ func (x *FileInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileInfo.ProtoReflect.Descriptor instead.
 func (*FileInfo) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{4}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FileInfo) GetSize() int64 {
@@ -575,7 +646,7 @@ type DirectoryInfo struct {
 
 func (x *DirectoryInfo) Reset() {
 	*x = DirectoryInfo{}
-	mi := &file_biga_v1_biga_proto_msgTypes[5]
+	mi := &file_biga_v1_biga_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -587,7 +658,7 @@ func (x *DirectoryInfo) String() string {
 func (*DirectoryInfo) ProtoMessage() {}
 
 func (x *DirectoryInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[5]
+	mi := &file_biga_v1_biga_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -600,7 +671,7 @@ func (x *DirectoryInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryInfo.ProtoReflect.Descriptor instead.
 func (*DirectoryInfo) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{5}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DirectoryInfo) GetChildren() []*FileNode {
@@ -629,7 +700,7 @@ type FileSnapshot struct {
 
 func (x *FileSnapshot) Reset() {
 	*x = FileSnapshot{}
-	mi := &file_biga_v1_biga_proto_msgTypes[6]
+	mi := &file_biga_v1_biga_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -641,7 +712,7 @@ func (x *FileSnapshot) String() string {
 func (*FileSnapshot) ProtoMessage() {}
 
 func (x *FileSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[6]
+	mi := &file_biga_v1_biga_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -654,7 +725,7 @@ func (x *FileSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileSnapshot.ProtoReflect.Descriptor instead.
 func (*FileSnapshot) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{6}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FileSnapshot) GetSessionId() string {
@@ -700,7 +771,7 @@ type CheckpointEntry struct {
 
 func (x *CheckpointEntry) Reset() {
 	*x = CheckpointEntry{}
-	mi := &file_biga_v1_biga_proto_msgTypes[7]
+	mi := &file_biga_v1_biga_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -712,7 +783,7 @@ func (x *CheckpointEntry) String() string {
 func (*CheckpointEntry) ProtoMessage() {}
 
 func (x *CheckpointEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[7]
+	mi := &file_biga_v1_biga_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -725,7 +796,7 @@ func (x *CheckpointEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckpointEntry.ProtoReflect.Descriptor instead.
 func (*CheckpointEntry) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{7}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CheckpointEntry) GetPath() string {
@@ -788,7 +859,7 @@ type CheckpointUpload struct {
 
 func (x *CheckpointUpload) Reset() {
 	*x = CheckpointUpload{}
-	mi := &file_biga_v1_biga_proto_msgTypes[8]
+	mi := &file_biga_v1_biga_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -800,7 +871,7 @@ func (x *CheckpointUpload) String() string {
 func (*CheckpointUpload) ProtoMessage() {}
 
 func (x *CheckpointUpload) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[8]
+	mi := &file_biga_v1_biga_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -813,7 +884,7 @@ func (x *CheckpointUpload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckpointUpload.ProtoReflect.Descriptor instead.
 func (*CheckpointUpload) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{8}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CheckpointUpload) GetSessionId() string {
@@ -853,7 +924,7 @@ type CheckpointChange struct {
 
 func (x *CheckpointChange) Reset() {
 	*x = CheckpointChange{}
-	mi := &file_biga_v1_biga_proto_msgTypes[9]
+	mi := &file_biga_v1_biga_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -865,7 +936,7 @@ func (x *CheckpointChange) String() string {
 func (*CheckpointChange) ProtoMessage() {}
 
 func (x *CheckpointChange) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[9]
+	mi := &file_biga_v1_biga_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -878,7 +949,7 @@ func (x *CheckpointChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckpointChange.ProtoReflect.Descriptor instead.
 func (*CheckpointChange) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{9}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CheckpointChange) GetPath() string {
@@ -953,7 +1024,7 @@ type CheckpointSummary struct {
 
 func (x *CheckpointSummary) Reset() {
 	*x = CheckpointSummary{}
-	mi := &file_biga_v1_biga_proto_msgTypes[10]
+	mi := &file_biga_v1_biga_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -965,7 +1036,7 @@ func (x *CheckpointSummary) String() string {
 func (*CheckpointSummary) ProtoMessage() {}
 
 func (x *CheckpointSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[10]
+	mi := &file_biga_v1_biga_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -978,7 +1049,7 @@ func (x *CheckpointSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckpointSummary.ProtoReflect.Descriptor instead.
 func (*CheckpointSummary) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{10}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CheckpointSummary) GetNamed() bool {
@@ -1047,7 +1118,7 @@ type Checkpoint struct {
 
 func (x *Checkpoint) Reset() {
 	*x = Checkpoint{}
-	mi := &file_biga_v1_biga_proto_msgTypes[11]
+	mi := &file_biga_v1_biga_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1059,7 +1130,7 @@ func (x *Checkpoint) String() string {
 func (*Checkpoint) ProtoMessage() {}
 
 func (x *Checkpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[11]
+	mi := &file_biga_v1_biga_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1072,7 +1143,7 @@ func (x *Checkpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Checkpoint.ProtoReflect.Descriptor instead.
 func (*Checkpoint) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{11}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Checkpoint) GetSummary() *CheckpointSummary {
@@ -1106,7 +1177,7 @@ type FileHistoryEntry struct {
 
 func (x *FileHistoryEntry) Reset() {
 	*x = FileHistoryEntry{}
-	mi := &file_biga_v1_biga_proto_msgTypes[12]
+	mi := &file_biga_v1_biga_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1118,7 +1189,7 @@ func (x *FileHistoryEntry) String() string {
 func (*FileHistoryEntry) ProtoMessage() {}
 
 func (x *FileHistoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[12]
+	mi := &file_biga_v1_biga_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1131,7 +1202,7 @@ func (x *FileHistoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileHistoryEntry.ProtoReflect.Descriptor instead.
 func (*FileHistoryEntry) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{12}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *FileHistoryEntry) GetSeq() int32 {
@@ -1209,7 +1280,7 @@ type ManifestEntry struct {
 
 func (x *ManifestEntry) Reset() {
 	*x = ManifestEntry{}
-	mi := &file_biga_v1_biga_proto_msgTypes[13]
+	mi := &file_biga_v1_biga_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1221,7 +1292,7 @@ func (x *ManifestEntry) String() string {
 func (*ManifestEntry) ProtoMessage() {}
 
 func (x *ManifestEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[13]
+	mi := &file_biga_v1_biga_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1234,7 +1305,7 @@ func (x *ManifestEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManifestEntry.ProtoReflect.Descriptor instead.
 func (*ManifestEntry) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{13}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ManifestEntry) GetPath() string {
@@ -1274,7 +1345,7 @@ type Manifest struct {
 
 func (x *Manifest) Reset() {
 	*x = Manifest{}
-	mi := &file_biga_v1_biga_proto_msgTypes[14]
+	mi := &file_biga_v1_biga_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1286,7 +1357,7 @@ func (x *Manifest) String() string {
 func (*Manifest) ProtoMessage() {}
 
 func (x *Manifest) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[14]
+	mi := &file_biga_v1_biga_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1299,7 +1370,7 @@ func (x *Manifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Manifest.ProtoReflect.Descriptor instead.
 func (*Manifest) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{14}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Manifest) GetFiles() []*ManifestEntry {
@@ -1323,7 +1394,7 @@ type SessionState struct {
 
 func (x *SessionState) Reset() {
 	*x = SessionState{}
-	mi := &file_biga_v1_biga_proto_msgTypes[15]
+	mi := &file_biga_v1_biga_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1335,7 +1406,7 @@ func (x *SessionState) String() string {
 func (*SessionState) ProtoMessage() {}
 
 func (x *SessionState) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[15]
+	mi := &file_biga_v1_biga_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1348,7 +1419,7 @@ func (x *SessionState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionState.ProtoReflect.Descriptor instead.
 func (*SessionState) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{15}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SessionState) GetSession() *Session {
@@ -1397,7 +1468,7 @@ type FileContent struct {
 
 func (x *FileContent) Reset() {
 	*x = FileContent{}
-	mi := &file_biga_v1_biga_proto_msgTypes[16]
+	mi := &file_biga_v1_biga_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1409,7 +1480,7 @@ func (x *FileContent) String() string {
 func (*FileContent) ProtoMessage() {}
 
 func (x *FileContent) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[16]
+	mi := &file_biga_v1_biga_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1422,7 +1493,7 @@ func (x *FileContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileContent.ProtoReflect.Descriptor instead.
 func (*FileContent) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{16}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *FileContent) GetContent() []byte {
@@ -1455,7 +1526,7 @@ type ListCheckpointsResponse struct {
 
 func (x *ListCheckpointsResponse) Reset() {
 	*x = ListCheckpointsResponse{}
-	mi := &file_biga_v1_biga_proto_msgTypes[17]
+	mi := &file_biga_v1_biga_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +1538,7 @@ func (x *ListCheckpointsResponse) String() string {
 func (*ListCheckpointsResponse) ProtoMessage() {}
 
 func (x *ListCheckpointsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[17]
+	mi := &file_biga_v1_biga_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +1551,7 @@ func (x *ListCheckpointsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCheckpointsResponse.ProtoReflect.Descriptor instead.
 func (*ListCheckpointsResponse) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{17}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListCheckpointsResponse) GetCheckpoints() []*CheckpointSummary {
@@ -1499,7 +1570,7 @@ type FileHistoryResponse struct {
 
 func (x *FileHistoryResponse) Reset() {
 	*x = FileHistoryResponse{}
-	mi := &file_biga_v1_biga_proto_msgTypes[18]
+	mi := &file_biga_v1_biga_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1511,7 +1582,7 @@ func (x *FileHistoryResponse) String() string {
 func (*FileHistoryResponse) ProtoMessage() {}
 
 func (x *FileHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[18]
+	mi := &file_biga_v1_biga_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1524,12 +1595,196 @@ func (x *FileHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileHistoryResponse.ProtoReflect.Descriptor instead.
 func (*FileHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{18}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *FileHistoryResponse) GetHistory() []*FileHistoryEntry {
 	if x != nil {
 		return x.History
+	}
+	return nil
+}
+
+type MissingBlobsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hashes        []string               `protobuf:"bytes,1,rep,name=hashes,proto3" json:"hashes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MissingBlobsRequest) Reset() {
+	*x = MissingBlobsRequest{}
+	mi := &file_biga_v1_biga_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MissingBlobsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MissingBlobsRequest) ProtoMessage() {}
+
+func (x *MissingBlobsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_biga_v1_biga_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MissingBlobsRequest.ProtoReflect.Descriptor instead.
+func (*MissingBlobsRequest) Descriptor() ([]byte, []int) {
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *MissingBlobsRequest) GetHashes() []string {
+	if x != nil {
+		return x.Hashes
+	}
+	return nil
+}
+
+type MissingBlobsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hashes        []string               `protobuf:"bytes,1,rep,name=hashes,proto3" json:"hashes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MissingBlobsResponse) Reset() {
+	*x = MissingBlobsResponse{}
+	mi := &file_biga_v1_biga_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MissingBlobsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MissingBlobsResponse) ProtoMessage() {}
+
+func (x *MissingBlobsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_biga_v1_biga_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MissingBlobsResponse.ProtoReflect.Descriptor instead.
+func (*MissingBlobsResponse) Descriptor() ([]byte, []int) {
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *MissingBlobsResponse) GetHashes() []string {
+	if x != nil {
+		return x.Hashes
+	}
+	return nil
+}
+
+type Blob struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hash          string                 `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
+	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Blob) Reset() {
+	*x = Blob{}
+	mi := &file_biga_v1_biga_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Blob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Blob) ProtoMessage() {}
+
+func (x *Blob) ProtoReflect() protoreflect.Message {
+	mi := &file_biga_v1_biga_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Blob.ProtoReflect.Descriptor instead.
+func (*Blob) Descriptor() ([]byte, []int) {
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *Blob) GetHash() string {
+	if x != nil {
+		return x.Hash
+	}
+	return ""
+}
+
+func (x *Blob) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+type UploadBlobsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Blobs         []*Blob                `protobuf:"bytes,1,rep,name=blobs,proto3" json:"blobs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadBlobsRequest) Reset() {
+	*x = UploadBlobsRequest{}
+	mi := &file_biga_v1_biga_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadBlobsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadBlobsRequest) ProtoMessage() {}
+
+func (x *UploadBlobsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_biga_v1_biga_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadBlobsRequest.ProtoReflect.Descriptor instead.
+func (*UploadBlobsRequest) Descriptor() ([]byte, []int) {
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *UploadBlobsRequest) GetBlobs() []*Blob {
+	if x != nil {
+		return x.Blobs
 	}
 	return nil
 }
@@ -1543,7 +1798,7 @@ type MarkCheckpointRequest struct {
 
 func (x *MarkCheckpointRequest) Reset() {
 	*x = MarkCheckpointRequest{}
-	mi := &file_biga_v1_biga_proto_msgTypes[19]
+	mi := &file_biga_v1_biga_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1810,7 @@ func (x *MarkCheckpointRequest) String() string {
 func (*MarkCheckpointRequest) ProtoMessage() {}
 
 func (x *MarkCheckpointRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[19]
+	mi := &file_biga_v1_biga_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1823,7 @@ func (x *MarkCheckpointRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkCheckpointRequest.ProtoReflect.Descriptor instead.
 func (*MarkCheckpointRequest) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{19}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *MarkCheckpointRequest) GetName() string {
@@ -1589,7 +1844,7 @@ type Extension struct {
 
 func (x *Extension) Reset() {
 	*x = Extension{}
-	mi := &file_biga_v1_biga_proto_msgTypes[20]
+	mi := &file_biga_v1_biga_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1601,7 +1856,7 @@ func (x *Extension) String() string {
 func (*Extension) ProtoMessage() {}
 
 func (x *Extension) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[20]
+	mi := &file_biga_v1_biga_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1614,7 +1869,7 @@ func (x *Extension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Extension.ProtoReflect.Descriptor instead.
 func (*Extension) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{20}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Extension) GetId() string {
@@ -1649,7 +1904,7 @@ type ExtensionGrant struct {
 
 func (x *ExtensionGrant) Reset() {
 	*x = ExtensionGrant{}
-	mi := &file_biga_v1_biga_proto_msgTypes[21]
+	mi := &file_biga_v1_biga_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1661,7 +1916,7 @@ func (x *ExtensionGrant) String() string {
 func (*ExtensionGrant) ProtoMessage() {}
 
 func (x *ExtensionGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[21]
+	mi := &file_biga_v1_biga_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1674,7 +1929,7 @@ func (x *ExtensionGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtensionGrant.ProtoReflect.Descriptor instead.
 func (*ExtensionGrant) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{21}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ExtensionGrant) GetExtension() *Extension {
@@ -1700,7 +1955,7 @@ type CreateExtensionRequest struct {
 
 func (x *CreateExtensionRequest) Reset() {
 	*x = CreateExtensionRequest{}
-	mi := &file_biga_v1_biga_proto_msgTypes[22]
+	mi := &file_biga_v1_biga_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1712,7 +1967,7 @@ func (x *CreateExtensionRequest) String() string {
 func (*CreateExtensionRequest) ProtoMessage() {}
 
 func (x *CreateExtensionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[22]
+	mi := &file_biga_v1_biga_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1725,7 +1980,7 @@ func (x *CreateExtensionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExtensionRequest.ProtoReflect.Descriptor instead.
 func (*CreateExtensionRequest) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{22}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateExtensionRequest) GetName() string {
@@ -1744,7 +1999,7 @@ type ListExtensionsResponse struct {
 
 func (x *ListExtensionsResponse) Reset() {
 	*x = ListExtensionsResponse{}
-	mi := &file_biga_v1_biga_proto_msgTypes[23]
+	mi := &file_biga_v1_biga_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1756,7 +2011,7 @@ func (x *ListExtensionsResponse) String() string {
 func (*ListExtensionsResponse) ProtoMessage() {}
 
 func (x *ListExtensionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[23]
+	mi := &file_biga_v1_biga_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1769,7 +2024,7 @@ func (x *ListExtensionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExtensionsResponse.ProtoReflect.Descriptor instead.
 func (*ListExtensionsResponse) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{23}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListExtensionsResponse) GetExtensions() []*Extension {
@@ -1790,7 +2045,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_biga_v1_biga_proto_msgTypes[24]
+	mi := &file_biga_v1_biga_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1802,7 +2057,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[24]
+	mi := &file_biga_v1_biga_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1815,7 +2070,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{24}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Error) GetCode() string {
@@ -1839,17 +2094,21 @@ func (x *Error) GetDetails() map[string]string {
 	return nil
 }
 
+// replayed is true when the server will send every checkpoint after the
+// position the viewer asked to resume from, so the viewer need not reload the
+// session state.
 type Connected struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Connected) Reset() {
 	*x = Connected{}
-	mi := &file_biga_v1_biga_proto_msgTypes[25]
+	mi := &file_biga_v1_biga_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1861,7 +2120,7 @@ func (x *Connected) String() string {
 func (*Connected) ProtoMessage() {}
 
 func (x *Connected) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[25]
+	mi := &file_biga_v1_biga_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1874,7 +2133,7 @@ func (x *Connected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Connected.ProtoReflect.Descriptor instead.
 func (*Connected) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{25}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Connected) GetSessionId() string {
@@ -1891,6 +2150,13 @@ func (x *Connected) GetTimestamp() int64 {
 	return 0
 }
 
+func (x *Connected) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 type SessionEnded struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -1901,7 +2167,7 @@ type SessionEnded struct {
 
 func (x *SessionEnded) Reset() {
 	*x = SessionEnded{}
-	mi := &file_biga_v1_biga_proto_msgTypes[26]
+	mi := &file_biga_v1_biga_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1913,7 +2179,7 @@ func (x *SessionEnded) String() string {
 func (*SessionEnded) ProtoMessage() {}
 
 func (x *SessionEnded) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[26]
+	mi := &file_biga_v1_biga_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1926,7 +2192,7 @@ func (x *SessionEnded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionEnded.ProtoReflect.Descriptor instead.
 func (*SessionEnded) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{26}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SessionEnded) GetSessionId() string {
@@ -1952,7 +2218,7 @@ type Keepalive struct {
 
 func (x *Keepalive) Reset() {
 	*x = Keepalive{}
-	mi := &file_biga_v1_biga_proto_msgTypes[27]
+	mi := &file_biga_v1_biga_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1964,7 +2230,7 @@ func (x *Keepalive) String() string {
 func (*Keepalive) ProtoMessage() {}
 
 func (x *Keepalive) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[27]
+	mi := &file_biga_v1_biga_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1977,7 +2243,7 @@ func (x *Keepalive) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Keepalive.ProtoReflect.Descriptor instead.
 func (*Keepalive) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{27}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *Keepalive) GetTimestamp() int64 {
@@ -2005,7 +2271,7 @@ type StreamEvent struct {
 
 func (x *StreamEvent) Reset() {
 	*x = StreamEvent{}
-	mi := &file_biga_v1_biga_proto_msgTypes[28]
+	mi := &file_biga_v1_biga_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2017,7 +2283,7 @@ func (x *StreamEvent) String() string {
 func (*StreamEvent) ProtoMessage() {}
 
 func (x *StreamEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[28]
+	mi := &file_biga_v1_biga_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2030,7 +2296,7 @@ func (x *StreamEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEvent.ProtoReflect.Descriptor instead.
 func (*StreamEvent) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{28}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *StreamEvent) GetEvent() isStreamEvent_Event {
@@ -2121,18 +2387,20 @@ func (*StreamEvent_Keepalive) isStreamEvent_Event() {}
 
 // Carries an already encoded stream frame between server instances.
 type BridgeMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Frame         []byte                 `protobuf:"bytes,4,opt,name=frame,proto3" json:"frame,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	SessionId  string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Name       string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Frame      []byte                 `protobuf:"bytes,4,opt,name=frame,proto3" json:"frame,omitempty"`
+	// The checkpoint number, for frames named "checkpoint".
+	Seq           int32 `protobuf:"varint,5,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BridgeMessage) Reset() {
 	*x = BridgeMessage{}
-	mi := &file_biga_v1_biga_proto_msgTypes[29]
+	mi := &file_biga_v1_biga_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2144,7 +2412,7 @@ func (x *BridgeMessage) String() string {
 func (*BridgeMessage) ProtoMessage() {}
 
 func (x *BridgeMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_biga_v1_biga_proto_msgTypes[29]
+	mi := &file_biga_v1_biga_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2157,7 +2425,7 @@ func (x *BridgeMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeMessage.ProtoReflect.Descriptor instead.
 func (*BridgeMessage) Descriptor() ([]byte, []int) {
-	return file_biga_v1_biga_proto_rawDescGZIP(), []int{29}
+	return file_biga_v1_biga_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *BridgeMessage) GetInstanceId() string {
@@ -2188,6 +2456,13 @@ func (x *BridgeMessage) GetFrame() []byte {
 	return nil
 }
 
+func (x *BridgeMessage) GetSeq() int32 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
 var File_biga_v1_biga_proto protoreflect.FileDescriptor
 
 const file_biga_v1_biga_proto_rawDesc = "" +
@@ -2213,11 +2488,16 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"\bgroup_id\x18\x03 \x01(\tH\x02R\agroupId\x88\x01\x01B\b\n" +
 	"\x06_titleB\x0e\n" +
 	"\f_descriptionB\v\n" +
-	"\t_group_id\"m\n" +
+	"\t_group_id\"\x8d\x01\n" +
+	"\x06Limits\x12,\n" +
+	"\x12max_snapshot_files\x18\x01 \x01(\x05R\x10maxSnapshotFiles\x12$\n" +
+	"\x0emax_file_bytes\x18\x02 \x01(\x03R\fmaxFileBytes\x12/\n" +
+	"\x14max_blob_batch_bytes\x18\x03 \x01(\x03R\x11maxBlobBatchBytes\"\x96\x01\n" +
 	"\fSessionGrant\x12*\n" +
 	"\asession\x18\x01 \x01(\v2\x10.biga.v1.SessionR\asession\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1b\n" +
-	"\tshare_url\x18\x03 \x01(\tR\bshareUrl\"\x9b\x01\n" +
+	"\tshare_url\x18\x03 \x01(\tR\bshareUrl\x12'\n" +
+	"\x06limits\x18\x04 \x01(\v2\x0f.biga.v1.LimitsR\x06limits\"\x9b\x01\n" +
 	"\bFileNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12'\n" +
@@ -2322,7 +2602,16 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"\x17ListCheckpointsResponse\x12<\n" +
 	"\vcheckpoints\x18\x01 \x03(\v2\x1a.biga.v1.CheckpointSummaryR\vcheckpoints\"J\n" +
 	"\x13FileHistoryResponse\x123\n" +
-	"\ahistory\x18\x01 \x03(\v2\x19.biga.v1.FileHistoryEntryR\ahistory\"+\n" +
+	"\ahistory\x18\x01 \x03(\v2\x19.biga.v1.FileHistoryEntryR\ahistory\"-\n" +
+	"\x13MissingBlobsRequest\x12\x16\n" +
+	"\x06hashes\x18\x01 \x03(\tR\x06hashes\".\n" +
+	"\x14MissingBlobsResponse\x12\x16\n" +
+	"\x06hashes\x18\x01 \x03(\tR\x06hashes\"4\n" +
+	"\x04Blob\x12\x12\n" +
+	"\x04hash\x18\x01 \x01(\tR\x04hash\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\"9\n" +
+	"\x12UploadBlobsRequest\x12#\n" +
+	"\x05blobs\x18\x01 \x03(\v2\r.biga.v1.BlobR\x05blobs\"+\n" +
 	"\x15MarkCheckpointRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"N\n" +
 	"\tExtension\x12\x0e\n" +
@@ -2345,11 +2634,12 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"\adetails\x18\x03 \x03(\v2\x1b.biga.v1.Error.DetailsEntryR\adetails\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"H\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"d\n" +
 	"\tConnected\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"K\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"K\n" +
 	"\fSessionEnded\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1c\n" +
@@ -2364,14 +2654,15 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"checkpoint\x12<\n" +
 	"\rsession_ended\x18\x04 \x01(\v2\x15.biga.v1.SessionEndedH\x00R\fsessionEnded\x122\n" +
 	"\tkeepalive\x18\x05 \x01(\v2\x12.biga.v1.KeepaliveH\x00R\tkeepaliveB\a\n" +
-	"\x05event\"y\n" +
+	"\x05event\"\x8b\x01\n" +
 	"\rBridgeMessage\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
-	"\x05frame\x18\x04 \x01(\fR\x05frame*d\n" +
+	"\x05frame\x18\x04 \x01(\fR\x05frame\x12\x10\n" +
+	"\x03seq\x18\x05 \x01(\x05R\x03seq*d\n" +
 	"\rSessionStatus\x12\x1e\n" +
 	"\x1aSESSION_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SESSION_STATUS_ACTIVE\x10\x01\x12\x18\n" +
@@ -2402,78 +2693,85 @@ func file_biga_v1_biga_proto_rawDescGZIP() []byte {
 }
 
 var file_biga_v1_biga_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_biga_v1_biga_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_biga_v1_biga_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_biga_v1_biga_proto_goTypes = []any{
 	(SessionStatus)(0),              // 0: biga.v1.SessionStatus
 	(ChangeType)(0),                 // 1: biga.v1.ChangeType
 	(LoadMode)(0),                   // 2: biga.v1.LoadMode
 	(*Session)(nil),                 // 3: biga.v1.Session
 	(*PutSessionRequest)(nil),       // 4: biga.v1.PutSessionRequest
-	(*SessionGrant)(nil),            // 5: biga.v1.SessionGrant
-	(*FileNode)(nil),                // 6: biga.v1.FileNode
-	(*FileInfo)(nil),                // 7: biga.v1.FileInfo
-	(*DirectoryInfo)(nil),           // 8: biga.v1.DirectoryInfo
-	(*FileSnapshot)(nil),            // 9: biga.v1.FileSnapshot
-	(*CheckpointEntry)(nil),         // 10: biga.v1.CheckpointEntry
-	(*CheckpointUpload)(nil),        // 11: biga.v1.CheckpointUpload
-	(*CheckpointChange)(nil),        // 12: biga.v1.CheckpointChange
-	(*CheckpointSummary)(nil),       // 13: biga.v1.CheckpointSummary
-	(*Checkpoint)(nil),              // 14: biga.v1.Checkpoint
-	(*FileHistoryEntry)(nil),        // 15: biga.v1.FileHistoryEntry
-	(*ManifestEntry)(nil),           // 16: biga.v1.ManifestEntry
-	(*Manifest)(nil),                // 17: biga.v1.Manifest
-	(*SessionState)(nil),            // 18: biga.v1.SessionState
-	(*FileContent)(nil),             // 19: biga.v1.FileContent
-	(*ListCheckpointsResponse)(nil), // 20: biga.v1.ListCheckpointsResponse
-	(*FileHistoryResponse)(nil),     // 21: biga.v1.FileHistoryResponse
-	(*MarkCheckpointRequest)(nil),   // 22: biga.v1.MarkCheckpointRequest
-	(*Extension)(nil),               // 23: biga.v1.Extension
-	(*ExtensionGrant)(nil),          // 24: biga.v1.ExtensionGrant
-	(*CreateExtensionRequest)(nil),  // 25: biga.v1.CreateExtensionRequest
-	(*ListExtensionsResponse)(nil),  // 26: biga.v1.ListExtensionsResponse
-	(*Error)(nil),                   // 27: biga.v1.Error
-	(*Connected)(nil),               // 28: biga.v1.Connected
-	(*SessionEnded)(nil),            // 29: biga.v1.SessionEnded
-	(*Keepalive)(nil),               // 30: biga.v1.Keepalive
-	(*StreamEvent)(nil),             // 31: biga.v1.StreamEvent
-	(*BridgeMessage)(nil),           // 32: biga.v1.BridgeMessage
-	nil,                             // 33: biga.v1.SessionState.ContentsEntry
-	nil,                             // 34: biga.v1.Error.DetailsEntry
+	(*Limits)(nil),                  // 5: biga.v1.Limits
+	(*SessionGrant)(nil),            // 6: biga.v1.SessionGrant
+	(*FileNode)(nil),                // 7: biga.v1.FileNode
+	(*FileInfo)(nil),                // 8: biga.v1.FileInfo
+	(*DirectoryInfo)(nil),           // 9: biga.v1.DirectoryInfo
+	(*FileSnapshot)(nil),            // 10: biga.v1.FileSnapshot
+	(*CheckpointEntry)(nil),         // 11: biga.v1.CheckpointEntry
+	(*CheckpointUpload)(nil),        // 12: biga.v1.CheckpointUpload
+	(*CheckpointChange)(nil),        // 13: biga.v1.CheckpointChange
+	(*CheckpointSummary)(nil),       // 14: biga.v1.CheckpointSummary
+	(*Checkpoint)(nil),              // 15: biga.v1.Checkpoint
+	(*FileHistoryEntry)(nil),        // 16: biga.v1.FileHistoryEntry
+	(*ManifestEntry)(nil),           // 17: biga.v1.ManifestEntry
+	(*Manifest)(nil),                // 18: biga.v1.Manifest
+	(*SessionState)(nil),            // 19: biga.v1.SessionState
+	(*FileContent)(nil),             // 20: biga.v1.FileContent
+	(*ListCheckpointsResponse)(nil), // 21: biga.v1.ListCheckpointsResponse
+	(*FileHistoryResponse)(nil),     // 22: biga.v1.FileHistoryResponse
+	(*MissingBlobsRequest)(nil),     // 23: biga.v1.MissingBlobsRequest
+	(*MissingBlobsResponse)(nil),    // 24: biga.v1.MissingBlobsResponse
+	(*Blob)(nil),                    // 25: biga.v1.Blob
+	(*UploadBlobsRequest)(nil),      // 26: biga.v1.UploadBlobsRequest
+	(*MarkCheckpointRequest)(nil),   // 27: biga.v1.MarkCheckpointRequest
+	(*Extension)(nil),               // 28: biga.v1.Extension
+	(*ExtensionGrant)(nil),          // 29: biga.v1.ExtensionGrant
+	(*CreateExtensionRequest)(nil),  // 30: biga.v1.CreateExtensionRequest
+	(*ListExtensionsResponse)(nil),  // 31: biga.v1.ListExtensionsResponse
+	(*Error)(nil),                   // 32: biga.v1.Error
+	(*Connected)(nil),               // 33: biga.v1.Connected
+	(*SessionEnded)(nil),            // 34: biga.v1.SessionEnded
+	(*Keepalive)(nil),               // 35: biga.v1.Keepalive
+	(*StreamEvent)(nil),             // 36: biga.v1.StreamEvent
+	(*BridgeMessage)(nil),           // 37: biga.v1.BridgeMessage
+	nil,                             // 38: biga.v1.SessionState.ContentsEntry
+	nil,                             // 39: biga.v1.Error.DetailsEntry
 }
 var file_biga_v1_biga_proto_depIdxs = []int32{
 	0,  // 0: biga.v1.Session.status:type_name -> biga.v1.SessionStatus
 	3,  // 1: biga.v1.SessionGrant.session:type_name -> biga.v1.Session
-	7,  // 2: biga.v1.FileNode.file:type_name -> biga.v1.FileInfo
-	8,  // 3: biga.v1.FileNode.directory:type_name -> biga.v1.DirectoryInfo
-	6,  // 4: biga.v1.DirectoryInfo.children:type_name -> biga.v1.FileNode
-	6,  // 5: biga.v1.FileSnapshot.tree:type_name -> biga.v1.FileNode
-	1,  // 6: biga.v1.CheckpointEntry.change_type:type_name -> biga.v1.ChangeType
-	10, // 7: biga.v1.CheckpointUpload.entries:type_name -> biga.v1.CheckpointEntry
-	1,  // 8: biga.v1.CheckpointChange.change_type:type_name -> biga.v1.ChangeType
-	13, // 9: biga.v1.Checkpoint.summary:type_name -> biga.v1.CheckpointSummary
-	12, // 10: biga.v1.Checkpoint.changes:type_name -> biga.v1.CheckpointChange
-	1,  // 11: biga.v1.FileHistoryEntry.change_type:type_name -> biga.v1.ChangeType
-	16, // 12: biga.v1.Manifest.files:type_name -> biga.v1.ManifestEntry
-	3,  // 13: biga.v1.SessionState.session:type_name -> biga.v1.Session
-	9,  // 14: biga.v1.SessionState.snapshot:type_name -> biga.v1.FileSnapshot
-	13, // 15: biga.v1.SessionState.checkpoints:type_name -> biga.v1.CheckpointSummary
-	2,  // 16: biga.v1.SessionState.mode:type_name -> biga.v1.LoadMode
-	33, // 17: biga.v1.SessionState.contents:type_name -> biga.v1.SessionState.ContentsEntry
-	13, // 18: biga.v1.ListCheckpointsResponse.checkpoints:type_name -> biga.v1.CheckpointSummary
-	15, // 19: biga.v1.FileHistoryResponse.history:type_name -> biga.v1.FileHistoryEntry
-	23, // 20: biga.v1.ExtensionGrant.extension:type_name -> biga.v1.Extension
-	23, // 21: biga.v1.ListExtensionsResponse.extensions:type_name -> biga.v1.Extension
-	34, // 22: biga.v1.Error.details:type_name -> biga.v1.Error.DetailsEntry
-	28, // 23: biga.v1.StreamEvent.connected:type_name -> biga.v1.Connected
-	9,  // 24: biga.v1.StreamEvent.snapshot:type_name -> biga.v1.FileSnapshot
-	14, // 25: biga.v1.StreamEvent.checkpoint:type_name -> biga.v1.Checkpoint
-	29, // 26: biga.v1.StreamEvent.session_ended:type_name -> biga.v1.SessionEnded
-	30, // 27: biga.v1.StreamEvent.keepalive:type_name -> biga.v1.Keepalive
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	5,  // 2: biga.v1.SessionGrant.limits:type_name -> biga.v1.Limits
+	8,  // 3: biga.v1.FileNode.file:type_name -> biga.v1.FileInfo
+	9,  // 4: biga.v1.FileNode.directory:type_name -> biga.v1.DirectoryInfo
+	7,  // 5: biga.v1.DirectoryInfo.children:type_name -> biga.v1.FileNode
+	7,  // 6: biga.v1.FileSnapshot.tree:type_name -> biga.v1.FileNode
+	1,  // 7: biga.v1.CheckpointEntry.change_type:type_name -> biga.v1.ChangeType
+	11, // 8: biga.v1.CheckpointUpload.entries:type_name -> biga.v1.CheckpointEntry
+	1,  // 9: biga.v1.CheckpointChange.change_type:type_name -> biga.v1.ChangeType
+	14, // 10: biga.v1.Checkpoint.summary:type_name -> biga.v1.CheckpointSummary
+	13, // 11: biga.v1.Checkpoint.changes:type_name -> biga.v1.CheckpointChange
+	1,  // 12: biga.v1.FileHistoryEntry.change_type:type_name -> biga.v1.ChangeType
+	17, // 13: biga.v1.Manifest.files:type_name -> biga.v1.ManifestEntry
+	3,  // 14: biga.v1.SessionState.session:type_name -> biga.v1.Session
+	10, // 15: biga.v1.SessionState.snapshot:type_name -> biga.v1.FileSnapshot
+	14, // 16: biga.v1.SessionState.checkpoints:type_name -> biga.v1.CheckpointSummary
+	2,  // 17: biga.v1.SessionState.mode:type_name -> biga.v1.LoadMode
+	38, // 18: biga.v1.SessionState.contents:type_name -> biga.v1.SessionState.ContentsEntry
+	14, // 19: biga.v1.ListCheckpointsResponse.checkpoints:type_name -> biga.v1.CheckpointSummary
+	16, // 20: biga.v1.FileHistoryResponse.history:type_name -> biga.v1.FileHistoryEntry
+	25, // 21: biga.v1.UploadBlobsRequest.blobs:type_name -> biga.v1.Blob
+	28, // 22: biga.v1.ExtensionGrant.extension:type_name -> biga.v1.Extension
+	28, // 23: biga.v1.ListExtensionsResponse.extensions:type_name -> biga.v1.Extension
+	39, // 24: biga.v1.Error.details:type_name -> biga.v1.Error.DetailsEntry
+	33, // 25: biga.v1.StreamEvent.connected:type_name -> biga.v1.Connected
+	10, // 26: biga.v1.StreamEvent.snapshot:type_name -> biga.v1.FileSnapshot
+	15, // 27: biga.v1.StreamEvent.checkpoint:type_name -> biga.v1.Checkpoint
+	34, // 28: biga.v1.StreamEvent.session_ended:type_name -> biga.v1.SessionEnded
+	35, // 29: biga.v1.StreamEvent.keepalive:type_name -> biga.v1.Keepalive
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_biga_v1_biga_proto_init() }
@@ -2483,15 +2781,15 @@ func file_biga_v1_biga_proto_init() {
 	}
 	file_biga_v1_biga_proto_msgTypes[0].OneofWrappers = []any{}
 	file_biga_v1_biga_proto_msgTypes[1].OneofWrappers = []any{}
-	file_biga_v1_biga_proto_msgTypes[3].OneofWrappers = []any{
+	file_biga_v1_biga_proto_msgTypes[4].OneofWrappers = []any{
 		(*FileNode_File)(nil),
 		(*FileNode_Directory)(nil),
 	}
-	file_biga_v1_biga_proto_msgTypes[7].OneofWrappers = []any{}
-	file_biga_v1_biga_proto_msgTypes[9].OneofWrappers = []any{}
-	file_biga_v1_biga_proto_msgTypes[12].OneofWrappers = []any{}
-	file_biga_v1_biga_proto_msgTypes[15].OneofWrappers = []any{}
-	file_biga_v1_biga_proto_msgTypes[28].OneofWrappers = []any{
+	file_biga_v1_biga_proto_msgTypes[8].OneofWrappers = []any{}
+	file_biga_v1_biga_proto_msgTypes[10].OneofWrappers = []any{}
+	file_biga_v1_biga_proto_msgTypes[13].OneofWrappers = []any{}
+	file_biga_v1_biga_proto_msgTypes[16].OneofWrappers = []any{}
+	file_biga_v1_biga_proto_msgTypes[33].OneofWrappers = []any{
 		(*StreamEvent_Connected)(nil),
 		(*StreamEvent_Snapshot)(nil),
 		(*StreamEvent_Checkpoint)(nil),
@@ -2504,7 +2802,7 @@ func file_biga_v1_biga_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_biga_v1_biga_proto_rawDesc), len(file_biga_v1_biga_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   32,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

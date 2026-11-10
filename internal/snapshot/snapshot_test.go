@@ -35,7 +35,7 @@ func build(t *testing.T, root string) *api.FileNode {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{})
+	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{KeepContent: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +120,44 @@ func TestBuild(t *testing.T) {
 	}
 }
 
+func TestBuildLeavesContentOutUnlessAsked(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{"a.txt": "hello\n", "sub/b.txt": "world\n"})
+	filter, _ := ignore.NewFilter(root)
+
+	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range Files(tree) {
+		if n.Content != "" || n.Size == 0 || len(n.Hash) != 64 || n.Binary {
+			t.Errorf("%s should carry a hash and size but no content: %+v", n.Path, n)
+		}
+	}
+	if len(Files(tree)) != 2 {
+		t.Errorf("Files = %d", len(Files(tree)))
+	}
+	if EmptyHash != hashString("") {
+		t.Errorf("EmptyHash = %s", EmptyHash)
+	}
+}
+
+func TestPruneRemovesListedFiles(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{"a.txt": "a", "sub/b.txt": "b"})
+	tree := build(t, root)
+	gone := map[*api.FileNode]bool{}
+	for _, n := range Files(tree) {
+		if n.Path == "sub/b.txt" {
+			gone[n] = true
+		}
+	}
+	Prune(tree, gone)
+	if got := Files(tree); len(got) != 1 || got[0].Path != "a.txt" {
+		t.Errorf("files after pruning = %v", got)
+	}
+}
+
 func TestBuildSkipsUnreadableFiles(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("file permissions are not enforced")
@@ -192,7 +230,8 @@ func TestBuildReportsWithheldFiles(t *testing.T) {
 
 	withheld := map[string]string{}
 	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{
-		OnWithheld: func(rel string, findings []secrets.Finding) { withheld[rel] = findings[0].Rule },
+		KeepContent: true,
+		OnWithheld:  func(rel string, findings []secrets.Finding) { withheld[rel] = findings[0].Rule },
 	})
 	if err != nil {
 		t.Fatal(err)

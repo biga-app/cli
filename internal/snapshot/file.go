@@ -118,6 +118,9 @@ func ReadFile(root *os.Root, rel string, opts ReadOptions) (File, error) {
 	return File{Size: int64(len(data)), Hash: hashBytes(data), Content: string(data)}, nil
 }
 
+// EmptyHash is the hash of an empty file, which needs no uploaded content.
+var EmptyHash = hashBytes(nil)
+
 func hashBytes(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])

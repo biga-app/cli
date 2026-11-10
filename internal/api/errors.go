@@ -109,6 +109,14 @@ func IsAccessKeyError(err error) bool {
 	return ok && (se.Code == "access_key_required" || se.Code == "access_key_invalid")
 }
 
+// IsMissingBlob reports whether the server refused a snapshot because some
+// file content it refers to was never uploaded, usually because the file
+// changed while uploading.
+func IsMissingBlob(err error) bool {
+	se, ok := errors.AsType[*StatusError](err)
+	return ok && se.Code == "missing_blob"
+}
+
 // IsUnreachable reports whether err means the server could not be reached.
 func IsUnreachable(err error) bool {
 	_, ok := errors.AsType[*UnreachableError](err)

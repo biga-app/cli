@@ -1,6 +1,8 @@
 package broadcast
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,6 +43,15 @@ type fakeServer struct {
 	tokens map[string]string
 	// authFailures counts writes made without the right token.
 	authFailures int
+	// blobs is the content uploaded ahead of snapshots, by hash.
+	blobs          map[string]string
+	blobBatches    [][]string
+	missingQueries int
+	// rejectSnapshots makes the next n snapshots fail as if content were missing.
+	rejectSnapshots int
+	snapshotTries   int
+	// limits is reported when a session is created; zero fields are omitted.
+	limits bigav1.Limits
 }
 
 type snapshotBody struct {
@@ -75,9 +86,12 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/sessions/"), "/")
-	action := ""
+	action, sub := "", ""
 	if len(parts) > 1 {
 		action = parts[1]
+	}
+	if len(parts) > 2 {
+		sub = parts[2]
 	}
 	if s.tokens == nil {
 		s.tokens = map[string]string{}
@@ -89,7 +103,7 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.tokens[id] = token
 		s.upserts++
 		s.ended = false
-		writeProto(w, http.StatusCreated, sessionGrant(id, token))
+		writeProto(w, http.StatusCreated, s.grant(id, token))
 		return
 	}
 	switch got := r.Header.Get("Authorization"); {
@@ -110,7 +124,7 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPut && action == "":
 		s.upserts++
 		s.ended = false
-		writeProto(w, http.StatusOK, sessionGrant(id, ""))
+		writeProto(w, http.StatusOK, s.grant(id, ""))
 	case r.Method == http.MethodDelete && action == "":
 		s.ended = true
 		w.WriteHeader(http.StatusNoContent)
@@ -123,10 +137,47 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			files[i] = &bigav1.ManifestEntry{Path: f.Path, Hash: f.Hash, Size: f.Size, Binary: f.Binary}
 		}
 		writeProto(w, http.StatusOK, &bigav1.Manifest{Files: files})
+	case r.Method == http.MethodPost && action == "blobs" && sub == "missing":
+		var msg bigav1.MissingBlobsRequest
+		readProto(s.t, r, &msg)
+		s.missingQueries++
+		var missing []string
+		for _, h := range msg.GetHashes() {
+			if _, ok := s.blobs[h]; !ok {
+				missing = append(missing, h)
+			}
+		}
+		writeProto(w, http.StatusOK, &bigav1.MissingBlobsResponse{Hashes: missing})
+	case r.Method == http.MethodPost && action == "blobs":
+		var msg bigav1.UploadBlobsRequest
+		readProto(s.t, r, &msg)
+		if s.blobs == nil {
+			s.blobs = map[string]string{}
+		}
+		var batch []string
+		for _, b := range msg.GetBlobs() {
+			sum := sha256.Sum256(b.GetContent())
+			if hex.EncodeToString(sum[:]) != b.GetHash() {
+				s.t.Errorf("blob %s does not match its content", b.GetHash())
+			}
+			s.blobs[b.GetHash()] = string(b.GetContent())
+			batch = append(batch, b.GetHash())
+		}
+		s.blobBatches = append(s.blobBatches, batch)
+		w.WriteHeader(http.StatusAccepted)
 	case r.Method == http.MethodPost && action == "snapshot":
 		var msg bigav1.FileSnapshot
 		readProto(s.t, r, &msg)
-		s.snapshots = append(s.snapshots, snapshotBody{SessionID: msg.GetSessionId(), Tree: treeFromPB(msg.GetTree())})
+		s.snapshotTries++
+		tree := treeFromPB(msg.GetTree())
+		if missing := s.resolve(&tree); len(missing) > 0 || s.rejectSnapshots > 0 {
+			if s.rejectSnapshots > 0 {
+				s.rejectSnapshots--
+			}
+			writeError(w, http.StatusConflict, "missing_blob", "content was not uploaded")
+			return
+		}
+		s.snapshots = append(s.snapshots, snapshotBody{SessionID: msg.GetSessionId(), Tree: tree})
 		w.WriteHeader(http.StatusAccepted)
 	case r.Method == http.MethodPost && action == "checkpoint":
 		if s.failNext > 0 {
@@ -168,6 +219,35 @@ func writeProto(w http.ResponseWriter, status int, m proto.Message) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeProto(w, status, &bigav1.Error{Code: code, Message: message})
+}
+
+var emptyHash = func() string { sum := sha256.Sum256(nil); return hex.EncodeToString(sum[:]) }()
+
+// resolve fills in the content of text files from the uploaded blobs, as the
+// server does, and returns the hashes it has no blob for.
+func (s *fakeServer) resolve(n *treeNode) (missing []string) {
+	if n.Type == "file" {
+		if n.Binary || n.Content != "" || n.Hash == emptyHash {
+			return nil
+		}
+		if content, ok := s.blobs[n.Hash]; ok {
+			n.Content = content
+			return nil
+		}
+		return []string{n.Hash}
+	}
+	for i := range n.Children {
+		missing = append(missing, s.resolve(&n.Children[i])...)
+	}
+	return missing
+}
+
+func (s *fakeServer) grant(id, token string) *bigav1.SessionGrant {
+	g := sessionGrant(id, token)
+	if s.limits.GetMaxSnapshotFiles() > 0 || s.limits.GetMaxBlobBatchBytes() > 0 {
+		g.Limits = &bigav1.Limits{MaxSnapshotFiles: s.limits.GetMaxSnapshotFiles(), MaxBlobBatchBytes: s.limits.GetMaxBlobBatchBytes()}
+	}
+	return g
 }
 
 func sessionGrant(id, token string) *bigav1.SessionGrant {
@@ -348,6 +428,258 @@ func eventually(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func (s *fakeServer) uploadedBlobs() (batches [][]string, queries int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.blobBatches), s.missingQueries
+}
+
+func TestBroadcastUploadsContentBeforeTheSnapshot(t *testing.T) {
+	h := newHarness(t, map[string]string{
+		"a.txt": "alpha\n", "b.txt": "beta\n", "copy.txt": "alpha\n", "empty.txt": "", "logo.bin": "\x00\x01",
+	})
+	h.start()
+
+	batches, queries := h.server.uploadedBlobs()
+	var uploaded []string
+	for _, b := range batches {
+		uploaded = append(uploaded, b...)
+	}
+	slices.Sort(uploaded)
+	if queries == 0 || len(uploaded) != 2 {
+		t.Fatalf("one blob each for alpha and beta, none for the copy, the empty file or the binary; got %d after %d queries", len(uploaded), queries)
+	}
+	h.server.with(func(s *fakeServer) {
+		files := s.snapshots[0].Tree.files()
+		if len(files) != 5 || files["a.txt"].Content != "alpha\n" || files["copy.txt"].Content != "alpha\n" || files["empty.txt"].Content != "" {
+			t.Errorf("the snapshot should resolve to the uploaded content: %+v", files)
+		}
+	})
+}
+
+func TestBroadcastResumesAnInterruptedUpload(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n", "b.txt": "beta\n", "c.txt": "gamma\n"})
+	sum := sha256.Sum256([]byte("alpha\n"))
+	h.server.with(func(s *fakeServer) { s.blobs = map[string]string{hex.EncodeToString(sum[:]): "alpha\n"} })
+	h.start()
+
+	batches, _ := h.server.uploadedBlobs()
+	var count int
+	for _, b := range batches {
+		count += len(b)
+	}
+	if count != 2 {
+		t.Errorf("content the server already has is not sent again: %d blobs uploaded", count)
+	}
+}
+
+func TestBroadcastBatchesBlobsUnderTheServerLimit(t *testing.T) {
+	files := map[string]string{}
+	for i := range 12 {
+		files[fmt.Sprintf("f%02d.txt", i)] = strings.Repeat(string(rune('a'+i)), 700) + "\n"
+	}
+	h := newHarness(t, files)
+	h.server.with(func(s *fakeServer) { s.limits.MaxBlobBatchBytes = 2400 })
+	h.start()
+
+	batches, _ := h.server.uploadedBlobs()
+	if len(batches) < 4 {
+		t.Fatalf("12 blobs of 700 bytes under a 2400 byte limit need several batches, got %d", len(batches))
+	}
+	total := 0
+	for _, b := range batches {
+		if len(b) > 2 {
+			t.Errorf("a batch of %d blobs of 700 bytes does not fit in 1800 bytes", len(b))
+		}
+		total += len(b)
+	}
+	if total != 12 {
+		t.Errorf("uploaded %d blobs", total)
+	}
+}
+
+func TestBroadcastRefusesMoreFilesThanTheServerKeeps(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "a", "b.txt": "b", "c.txt": "c"})
+	h.server.with(func(s *fakeServer) { s.limits.MaxSnapshotFiles = 2 })
+	b, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = b.Start(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "3 files") || !strings.Contains(err.Error(), "at most 2") || !strings.Contains(err.Error(), "--only") {
+		t.Fatalf("err = %v", err)
+	}
+	if batches, _ := h.server.uploadedBlobs(); len(batches) != 0 {
+		t.Error("nothing should be uploaded for a project the server will refuse")
+	}
+	h.server.with(func(s *fakeServer) {
+		if !s.ended {
+			t.Error("the session was left running")
+		}
+	})
+}
+
+func TestBroadcastScansAgainWhenFilesChangeDuringTheUpload(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n"})
+	h.server.with(func(s *fakeServer) { s.rejectSnapshots = 1 })
+	h.start()
+	h.server.with(func(s *fakeServer) {
+		if s.snapshotTries != 2 || len(s.snapshots) != 1 {
+			t.Errorf("snapshot tries = %d, accepted = %d", s.snapshotTries, len(s.snapshots))
+		}
+	})
+}
+
+func TestBroadcastGivesUpScanningAfterAFewTries(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n"})
+	h.server.with(func(s *fakeServer) { s.rejectSnapshots = 10 })
+	b, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Start(t.Context()); !api.IsMissingBlob(err) {
+		t.Fatalf("err = %v", err)
+	}
+	h.server.with(func(s *fakeServer) {
+		if s.snapshotTries != maxScans {
+			t.Errorf("snapshot tries = %d, want %d", s.snapshotTries, maxScans)
+		}
+	})
+}
+
+func TestReadBlobFollowsAFileThatChanged(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "old\n", "gone.txt": "x\n"})
+	b, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.root, err = os.OpenRoot(h.root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.root.Close() })
+
+	node := &api.FileNode{Type: api.NodeFile, Path: "a.txt", Hash: strings.Repeat("0", 64), Size: 4}
+	write(t, h.root, "a.txt", "newer content\n")
+	blob, ok, err := b.readBlob(node)
+	if err != nil || !ok || blob.Content != "newer content\n" || node.Hash != blob.Hash || node.Size != int64(len("newer content\n")) {
+		t.Fatalf("blob = %+v, ok = %v, err = %v, node = %+v", blob, ok, err, node)
+	}
+
+	write(t, h.root, "a.txt", "key = AKIA"+"IOSFODNN7EXAMPLE\n")
+	blob, ok, err = b.readBlob(node)
+	if err != nil || !ok || blob.Hash != "" || !node.Binary {
+		t.Fatalf("a file that now looks like a secret becomes a placeholder: blob = %+v, ok = %v, err = %v, node = %+v", blob, ok, err, node)
+	}
+
+	if err := os.Remove(filepath.Join(h.root, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := b.readBlob(&api.FileNode{Type: api.NodeFile, Path: "gone.txt"}); ok || err != nil {
+		t.Errorf("a file that is gone: ok = %v, err = %v", ok, err)
+	}
+}
+
+func TestFillReadsContentLazilyAndHandlesMissingFiles(t *testing.T) {
+	h := newHarness(t, map[string]string{"changed.txt": "fresh\n"})
+	b, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.root, err = os.OpenRoot(h.root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.root.Close() })
+
+	stale := strings.Repeat("0", 64)
+	entries := []api.CheckpointEntry{
+		{Path: "changed.txt", ChangeType: api.ChangeModified, Hash: &stale, Size: 6},
+		{Path: "vanished.txt", ChangeType: api.ChangeAdded, Hash: &stale, Size: 3},
+		{Path: "gone.txt", ChangeType: api.ChangeDeleted},
+		{Path: "image.png", ChangeType: api.ChangeAdded, Hash: &stale, Size: 9, Binary: true},
+		{Path: "empty.txt", ChangeType: api.ChangeAdded, Hash: &stale},
+	}
+	if err := b.fill(entries); err != nil {
+		t.Fatal(err)
+	}
+	if entries[0].Content != "fresh\n" || *entries[0].Hash == stale || entries[0].ChangeType != api.ChangeModified {
+		t.Errorf("changed.txt = %+v", entries[0])
+	}
+	if entries[1].ChangeType != api.ChangeDeleted || entries[1].Hash != nil {
+		t.Errorf("a file that vanished is sent as a deletion: %+v", entries[1])
+	}
+	if entries[2].Content != "" || entries[3].Content != "" || entries[4].Content != "" {
+		t.Error("deletions, binaries and empty files are left as they are")
+	}
+}
+
+func TestChunksCountContentThatIsStillToBeRead(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	unfilled := api.CheckpointEntry{Path: "a.txt", ChangeType: api.ChangeAdded, Hash: &hash, Size: 700_000}
+	filled := unfilled
+	filled.Content = strings.Repeat("x", 700_000)
+	if entrySize(unfilled) < 700_000 || entrySize(filled) < entrySize(unfilled) || entrySize(filled)-entrySize(unfilled) > 16 {
+		t.Errorf("sizes: unfilled %d, filled %d", entrySize(unfilled), entrySize(filled))
+	}
+	if got := len(chunk([]api.CheckpointEntry{unfilled, unfilled, unfilled}, 1_000_000)); got != 3 {
+		t.Errorf("three 700 KB files do not share a 1 MB request, got %d chunks", got)
+	}
+}
+
+func TestBroadcastKeepsItsTokenWhenTheUploadFails(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n"})
+	h.server.with(func(s *fakeServer) { s.rejectSnapshots = 10 })
+	b, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Start(t.Context()); err == nil {
+		t.Fatal("expected the upload to fail")
+	}
+	rec, ok, err := h.store.Lookup(h.root)
+	if err != nil || !ok || rec.SessionID != b.SessionID() || !strings.HasPrefix(rec.Token, "bgs_") || rec.PID != 0 {
+		t.Fatalf("the owner token is saved so the session can be resumed: %+v, %v, %v", rec, ok, err)
+	}
+}
+
+func TestBroadcastResumesASessionWhoseFirstUploadNeverLanded(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n", "b.txt": "beta\n"})
+	h.server.with(func(s *fakeServer) { s.rejectSnapshots = 10 })
+	failed, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := failed.Start(t.Context()); err == nil {
+		t.Fatal("expected the first upload to fail")
+	}
+	batches, _ := h.server.uploadedBlobs()
+	h.server.with(func(s *fakeServer) { s.rejectSnapshots = 0 })
+
+	b, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.Rejoined() || b.SessionID() != failed.SessionID() {
+		t.Fatalf("the second run should rejoin the first run's session")
+	}
+	res, err := b.Start(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { b.Stop(t.Context()) })
+	if res.Sync != SyncedSnapshot || res.Files != 2 {
+		t.Errorf("an empty server manifest means a full snapshot, got %+v", res)
+	}
+	after, _ := h.server.uploadedBlobs()
+	if len(after) != len(batches) {
+		t.Errorf("content the server already had was sent again: %d batches, then %d", len(batches), len(after))
+	}
+	h.server.with(func(s *fakeServer) {
+		if len(s.snapshots) != 1 || len(s.snapshots[0].Tree.files()) != 2 {
+			t.Errorf("snapshots = %+v", s.snapshots)
+		}
+	})
 }
 
 func TestBroadcastDeletesFilesUnderReplacedDirectory(t *testing.T) {

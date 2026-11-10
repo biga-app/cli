@@ -155,6 +155,25 @@ type Session struct {
 	Token string
 	// ShareURL is the viewer link, when the server knows its public address.
 	ShareURL string
+	// Limits is what the server accepts, so an upload can fail early.
+	Limits Limits
+}
+
+// Limits is what a server accepts. A zero field means the server did not say.
+type Limits struct {
+	// MaxSnapshotFiles is the most files one session may hold.
+	MaxSnapshotFiles int
+	// MaxFileBytes is the largest file the server stores.
+	MaxFileBytes int64
+	// MaxBlobBatchBytes is the largest request body for uploading content.
+	MaxBlobBatchBytes int64
+}
+
+// Blob is file content uploaded ahead of the snapshot that refers to it.
+type Blob struct {
+	// Hash is the hex SHA-256 of Content.
+	Hash    string
+	Content string
 }
 
 // ManifestEntry identifies one file the server currently holds for a session.

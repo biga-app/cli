@@ -139,6 +139,29 @@ func (c *Client) UploadSnapshot(ctx context.Context, token string, s *FileSnapsh
 	})
 }
 
+// MissingBlobs asks which of the content hashes the server has not stored for
+// the session, so only those need uploading.
+func (c *Client) MissingBlobs(ctx context.Context, sessionID, token string, hashes []string) ([]string, error) {
+	var res bigav1.MissingBlobsResponse
+	_, err := c.do(ctx, http.MethodPost, sessionPath(sessionID, "blobs/missing"),
+		&bigav1.MissingBlobsRequest{Hashes: hashes}, &res, request{attempts: 2, token: token})
+	if err != nil {
+		return nil, err
+	}
+	return res.GetHashes(), nil
+}
+
+// UploadBlobs stores file content ahead of the snapshot that will refer to it,
+// and returns the size of the request body as sent.
+func (c *Client) UploadBlobs(ctx context.Context, sessionID, token string, blobs []Blob) (int, error) {
+	if len(blobs) == 0 {
+		return 0, errors.New("invalid blob upload: no blobs")
+	}
+	return c.do(ctx, http.MethodPost, sessionPath(sessionID, "blobs"), blobsToPB(blobs), nil, request{
+		timeout: uploadTimeout, compress: true, token: token,
+	})
+}
+
 func sessionPath(sessionID, action string) string {
 	p := "/api/sessions/" + url.PathEscape(sessionID)
 	if action != "" {

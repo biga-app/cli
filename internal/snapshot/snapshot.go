@@ -24,6 +24,10 @@ const ReadConcurrency = 16
 // nothing.
 type BuildOptions struct {
 	NoSecretScan bool
+	// KeepContent leaves each text file's content in the tree. Without it the
+	// tree carries only hashes and sizes, so a large project does not have to
+	// fit in memory; content is read again when it is uploaded.
+	KeepContent bool
 	// OnSkip is told about files that could not be read.
 	OnSkip func(rel string, err error)
 	// OnWithheld is told about files kept out because they look like they
@@ -58,7 +62,10 @@ func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, opts Build
 				job.err = err
 				return nil
 			}
-			job.node.Size, job.node.Hash, job.node.Content, job.node.Binary = f.Size, f.Hash, f.Content, f.Binary
+			job.node.Size, job.node.Hash, job.node.Binary = f.Size, f.Hash, f.Binary
+			if opts.KeepContent {
+				job.node.Content = f.Content
+			}
 			job.withheld = f.Withheld
 			return nil
 		})
@@ -80,7 +87,7 @@ func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, opts Build
 		}
 	}
 	if len(failed) > 0 {
-		prune(tree, failed)
+		Prune(tree, failed)
 	}
 	return tree, nil
 }
@@ -137,13 +144,21 @@ func walk(root fs.FS, dir *api.FileNode, filter *ignore.Filter, files *[]*fileJo
 	return nil
 }
 
-func prune(dir *api.FileNode, drop map[*api.FileNode]bool) {
+// Prune removes the listed files from the tree.
+func Prune(dir *api.FileNode, drop map[*api.FileNode]bool) {
 	dir.Children = slices.DeleteFunc(dir.Children, func(n *api.FileNode) bool { return drop[n] })
 	for _, child := range dir.Children {
 		if child.Type == api.NodeDirectory {
-			prune(child, drop)
+			Prune(child, drop)
 		}
 	}
+}
+
+// Files lists every file in the tree.
+func Files(tree *api.FileNode) []*api.FileNode {
+	var files []*api.FileNode
+	walkFiles(tree, func(n *api.FileNode) { files = append(files, n) })
+	return files
 }
 
 // Hashes indexes every file in the tree by path.

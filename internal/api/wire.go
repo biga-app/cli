@@ -43,6 +43,11 @@ func sessionFromPB(g *bigav1.SessionGrant) (*Session, error) {
 		ID: s.GetId(), Title: s.GetTitle(), Status: statusName(s.GetStatus()),
 		CreatedAt: created, UpdatedAt: updated, GroupID: s.GroupId,
 		Token: g.GetToken(), ShareURL: g.GetShareUrl(),
+		Limits: Limits{
+			MaxSnapshotFiles:  int(g.GetLimits().GetMaxSnapshotFiles()),
+			MaxFileBytes:      g.GetLimits().GetMaxFileBytes(),
+			MaxBlobBatchBytes: g.GetLimits().GetMaxBlobBatchBytes(),
+		},
 	}
 	if s.EndedAt != nil {
 		ended, err := parseTime("endedAt", s.GetEndedAt())
@@ -132,4 +137,17 @@ const entriesField = 2
 // what the server's limit applies to.
 func (e CheckpointEntry) EncodedSize() int {
 	return protowire.SizeTag(entriesField) + protowire.SizeBytes(proto.Size(entryToPB(e)))
+}
+
+func blobsToPB(blobs []Blob) *bigav1.UploadBlobsRequest {
+	out := make([]*bigav1.Blob, len(blobs))
+	for i, b := range blobs {
+		out[i] = &bigav1.Blob{Hash: b.Hash, Content: []byte(b.Content)}
+	}
+	return &bigav1.UploadBlobsRequest{Blobs: out}
+}
+
+// BlobEncodedSize is a blob's size within an upload body.
+func BlobEncodedSize(b Blob) int {
+	return protowire.SizeTag(1) + protowire.SizeBytes(proto.Size(&bigav1.Blob{Hash: b.Hash, Content: []byte(b.Content)}))
 }

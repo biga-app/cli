@@ -224,6 +224,9 @@ func (b *Broadcast) apply(states []fileState) ([]api.CheckpointEntry, map[string
 func (b *Broadcast) sendAll(ctx context.Context, entries []api.CheckpointEntry) (int, error) {
 	total := 0
 	for _, c := range chunk(entries, maxCheckpointBytes) {
+		if err := b.fill(c); err != nil {
+			return total, err
+		}
 		sent, err := b.push(ctx, c)
 		if err != nil {
 			return total, err
@@ -248,6 +251,38 @@ func (b *Broadcast) push(ctx context.Context, entries []api.CheckpointEntry) (in
 	return b.opts.Client.PushCheckpoint(ctx, b.token(), upload)
 }
 
+// fill reads the content of entries that left it out, such as the changes found
+// when rejoining, so a project does not have to fit in memory to be compared.
+// A file that changed since it was hashed is sent as it is now, and one that
+// is gone is sent as a deletion.
+func (b *Broadcast) fill(entries []api.CheckpointEntry) error {
+	for i, e := range entries {
+		if e.ChangeType == api.ChangeDeleted || e.Binary || e.Content != "" || e.Size == 0 {
+			continue
+		}
+		f, err := snapshot.ReadFile(b.root, e.Path, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan})
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			entries[i] = snapshot.Deletion(e.Path)
+		case err != nil:
+			return fmt.Errorf("read %s: %w", e.Path, err)
+		default:
+			entries[i] = f.Entry(e.Path, e.ChangeType)
+		}
+	}
+	return nil
+}
+
+// entrySize is what an entry will weigh in a request: for one whose content
+// is still to be read, that includes the content.
+func entrySize(e api.CheckpointEntry) int {
+	n := e.EncodedSize()
+	if e.ChangeType != api.ChangeDeleted && !e.Binary && e.Content == "" {
+		n += int(e.Size)
+	}
+	return n
+}
+
 // chunk splits entries into groups whose encoded size stays under limit. An
 // entry larger than limit on its own still gets a group of its own.
 func chunk(entries []api.CheckpointEntry, limit int) [][]api.CheckpointEntry {
@@ -255,7 +290,7 @@ func chunk(entries []api.CheckpointEntry, limit int) [][]api.CheckpointEntry {
 	var current []api.CheckpointEntry
 	size := 0
 	for _, e := range entries {
-		n := e.EncodedSize()
+		n := entrySize(e)
 		if len(current) > 0 && size+n > limit {
 			chunks = append(chunks, current)
 			current, size = nil, 0

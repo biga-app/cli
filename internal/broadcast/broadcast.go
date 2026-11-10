@@ -130,6 +130,7 @@ type Broadcast struct {
 	cred      sync.Mutex
 	ownerTok  string
 	shareLink string
+	limits    api.Limits
 
 	filter  *ignore.Filter
 	root    *os.Root
@@ -234,6 +235,7 @@ func (b *Broadcast) adopt(s *api.Session) (newToken bool) {
 	if s.ShareURL != "" {
 		b.shareLink = s.ShareURL
 	}
+	b.limits = s.Limits
 	return newToken
 }
 
@@ -279,6 +281,11 @@ func (b *Broadcast) Start(ctx context.Context) (res Result, err error) {
 	if err := b.ensureSession(ctx); err != nil {
 		return Result{}, err
 	}
+	// The server shows the owner token once. Keep it before the long upload, so
+	// a broadcast that is killed partway can be started again and resume.
+	if err := b.persist(true); err != nil {
+		return Result{}, fmt.Errorf("save session: %w", err)
+	}
 	defer func() {
 		if err != nil {
 			b.abort()
@@ -307,20 +314,8 @@ func (b *Broadcast) Start(ctx context.Context) (res Result, err error) {
 		return Result{}, fmt.Errorf("watch %s: %w", b.opts.RootDir, err)
 	}
 
-	b.events.Progress("Scanning files…")
-	tree, err := snapshot.Build(ctx, b.root, b.filter, snapshot.BuildOptions{
-		NoSecretScan: b.opts.NoSecretScan,
-		OnSkip: func(rel string, err error) {
-			b.events.Warn(fmt.Sprintf("Skipped %s: %v", rel, err))
-		},
-		OnWithheld: func(rel string, findings []secrets.Finding) {
-			b.events.Warn(withheldMessage(rel, findings))
-		},
-	})
+	tree, res, err := b.scanAndUpload(ctx)
 	if err != nil {
-		return Result{}, err
-	}
-	if res, err = b.upload(ctx, tree); err != nil {
 		return Result{}, err
 	}
 	b.hashes = snapshot.Hashes(tree)
@@ -341,6 +336,37 @@ func (b *Broadcast) Start(ctx context.Context) (res Result, err error) {
 	return res, nil
 }
 
+// maxScans is how many times a broadcast scans again when files change
+// between hashing them and uploading what the server is missing.
+const maxScans = 3
+
+// scanAndUpload reads the directory into a tree and uploads it. If a file
+// changed in between, so that the server lacks some content the tree refers
+// to, it scans again.
+func (b *Broadcast) scanAndUpload(ctx context.Context) (*api.FileNode, Result, error) {
+	for scan := 1; ; scan++ {
+		b.events.Progress("Scanning files…")
+		tree, err := snapshot.Build(ctx, b.root, b.filter, snapshot.BuildOptions{
+			NoSecretScan: b.opts.NoSecretScan,
+			OnSkip: func(rel string, err error) {
+				b.events.Warn(fmt.Sprintf("Skipped %s: %v", rel, err))
+			},
+			OnWithheld: func(rel string, findings []secrets.Finding) {
+				b.events.Warn(withheldMessage(rel, findings))
+			},
+		})
+		if err != nil {
+			return nil, Result{}, err
+		}
+		res, err := b.upload(ctx, tree)
+		if api.IsMissingBlob(err) && scan < maxScans {
+			b.events.Info("Files changed while uploading; scanning again.")
+			continue
+		}
+		return tree, res, err
+	}
+}
+
 // upload brings the server in line with tree: a full snapshot for a new
 // session, or only the differences when rejoining one.
 func (b *Broadcast) upload(ctx context.Context, tree *api.FileNode) (Result, error) {
@@ -356,6 +382,12 @@ func (b *Broadcast) upload(ctx context.Context, tree *api.FileNode) (Result, err
 	if err != nil {
 		return Result{}, err
 	}
+	if len(manifest.Files) == 0 {
+		// Nothing landed on the server last time, for instance because the
+		// first upload was interrupted. Send the whole tree; content already
+		// stored is skipped.
+		return b.uploadSnapshot(ctx, tree)
+	}
 	entries := snapshot.Diff(manifest, tree)
 	if len(entries) == 0 {
 		return Result{Sync: SyncedNothing}, nil
@@ -369,8 +401,16 @@ func (b *Broadcast) upload(ctx context.Context, tree *api.FileNode) (Result, err
 }
 
 func (b *Broadcast) uploadSnapshot(ctx context.Context, tree *api.FileNode) (Result, error) {
+	all := snapshot.Files(tree)
+	if err := b.checkFileCount(len(all)); err != nil {
+		return Result{}, err
+	}
+	blobBytes, err := b.uploadBlobs(ctx, tree, all)
+	if err != nil {
+		return Result{}, err
+	}
 	snap := &api.FileSnapshot{SessionID: b.sessionID, Tree: tree, Timestamp: time.Now().UnixMilli()}
-	files := len(snapshot.Hashes(tree))
+	files := len(all)
 	var last time.Time
 	sent, err := b.opts.Client.UploadSnapshot(ctx, b.token(), snap, func(done, total int) {
 		// Throttled: the body is read in small chunks.
@@ -382,7 +422,7 @@ func (b *Broadcast) uploadSnapshot(ctx context.Context, tree *api.FileNode) (Res
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{Sync: SyncedSnapshot, Files: files, Bytes: sent}, nil
+	return Result{Sync: SyncedSnapshot, Files: files, Bytes: blobBytes + sent}, nil
 }
 
 // abort undoes a failed Start. The session already exists on the server, so
@@ -397,6 +437,7 @@ func (b *Broadcast) abort() {
 	if b.root != nil {
 		_ = b.root.Close()
 	}
+	_ = b.persist(false)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = b.opts.Client.EndSession(ctx, b.sessionID, b.token())
