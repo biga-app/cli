@@ -20,7 +20,7 @@ import (
 	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
 
-const protoType = "application/x-protobuf"
+const protoType = bigav1.MediaTypeProtobuf
 
 // ErrOlderServer means the server answered in JSON, which only servers from
 // before the protobuf wire do.
@@ -130,7 +130,7 @@ func (c *Client) attempt(ctx context.Context, method, route string, b body, time
 		req.Header.Set("Authorization", "Bearer "+opts.token)
 	}
 	if c.accessKey != "" {
-		req.Header.Set("X-Biga-Key", c.accessKey)
+		req.Header.Set(bigav1.HeaderAccessKey, c.accessKey)
 	}
 	if b.data != nil {
 		req.ContentLength = int64(len(b.data))
@@ -244,7 +244,7 @@ func statusError(status int, data []byte, header http.Header) *StatusError {
 	var env envelope
 	if json.Unmarshal(data, &env) == nil && env.Error != nil {
 		se.Code, se.Message = env.Error.Code, env.Error.Message
-		if status == http.StatusUnsupportedMediaType && se.Code == "unsupported_media_type" {
+		if status == http.StatusUnsupportedMediaType && se.Code == bigav1.ErrorCodeUnsupportedMediaType {
 			se.Message = ErrOlderServer.Error()
 		}
 		return se

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
 
 // Stop requests are files rather than OS signals because on Windows a signal
@@ -66,13 +68,13 @@ const (
 	idLength   = 8
 )
 
-var idPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+var idPattern = regexp.MustCompile(bigav1.PatternSessionID)
 
 // ValidateID checks that a session or workspace ID is safe to use in URLs
 // and file names.
 func ValidateID(id string) error {
 	if !idPattern.MatchString(id) {
-		return fmt.Errorf("invalid id %q: use 1-64 letters, digits, '-' or '_', starting with a letter or digit", id)
+		return fmt.Errorf("invalid id %q: use 1-%d letters, digits, '-' or '_', starting with a letter or digit", id, bigav1.LimitMaxSessionIDLength)
 	}
 	return nil
 }

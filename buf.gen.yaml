@@ -8,5 +8,8 @@ plugins:
   - local: ["go", "run", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"]
     out: internal/api/apipb
     opt: paths=source_relative
+  - local: ["sh", "-c", "cd ../proto && go run ./cmd/protoc-gen-biga-contract"]
+    out: internal/api/apipb
+    opt: lang=go
 inputs:
   - directory: ../proto

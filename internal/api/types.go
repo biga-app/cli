@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
 
 // NodeType distinguishes files from directories in a snapshot tree.
@@ -90,7 +92,7 @@ type CheckpointUpload struct {
 // CLI's own file size limit, as a backstop against oversized uploads.
 const MaxEntryContentBytes = 5 << 20
 
-var hashPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+var hashPattern = regexp.MustCompile(bigav1.PatternHash)
 
 // Validate checks the structural rules the server enforces, so a malformed
 // payload fails locally with a precise message instead of a 400.

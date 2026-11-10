@@ -82,7 +82,7 @@ func (c *Client) EnsureSession(ctx context.Context, sessionID, token string, in 
 	var grant bigav1.SessionGrant
 	// Startup is interactive, so fail fast instead of walking the full backoff
 	// schedule against an unreachable server.
-	if _, err := c.do(ctx, http.MethodPut, sessionPath(sessionID, ""), putSessionToPB(in), &grant, request{attempts: 2, token: token}); err != nil {
+	if _, err := c.do(ctx, bigav1.RoutePutSessionMethod, routePath(bigav1.RoutePutSessionPath, sessionID), putSessionToPB(in), &grant, request{attempts: 2, token: token}); err != nil {
 		return nil, err
 	}
 	return sessionFromPB(&grant)
@@ -90,14 +90,14 @@ func (c *Client) EnsureSession(ctx context.Context, sessionID, token string, in 
 
 // EndSession marks the session as ended.
 func (c *Client) EndSession(ctx context.Context, sessionID, token string) error {
-	_, err := c.do(ctx, http.MethodDelete, sessionPath(sessionID, ""), nil, nil, request{token: token})
+	_, err := c.do(ctx, bigav1.RouteEndSessionMethod, routePath(bigav1.RouteEndSessionPath, sessionID), nil, nil, request{token: token})
 	return err
 }
 
 // Heartbeat reports that the broadcast is still live. It is not retried: the
 // next heartbeat is the retry.
 func (c *Client) Heartbeat(ctx context.Context, sessionID, token string) error {
-	_, err := c.do(ctx, http.MethodPost, sessionPath(sessionID, "heartbeat"), nil, nil, request{attempts: 1, token: token})
+	_, err := c.do(ctx, bigav1.RouteHeartbeatMethod, routePath(bigav1.RouteHeartbeatPath, sessionID), nil, nil, request{attempts: 1, token: token})
 	return err
 }
 
@@ -105,7 +105,7 @@ func (c *Client) Heartbeat(ctx context.Context, sessionID, token string) error {
 // session, so a rejoining CLI can upload only what changed.
 func (c *Client) Manifest(ctx context.Context, sessionID, token string) (*Manifest, error) {
 	var m bigav1.Manifest
-	_, err := c.do(ctx, http.MethodGet, sessionPath(sessionID, "manifest"), nil, &m, request{attempts: 2, token: token})
+	_, err := c.do(ctx, bigav1.RouteGetManifestMethod, routePath(bigav1.RouteGetManifestPath, sessionID), nil, &m, request{attempts: 2, token: token})
 	if HasStatus(err, http.StatusNotFound) {
 		return nil, ErrManifestUnavailable
 	}
@@ -121,7 +121,7 @@ func (c *Client) PushCheckpoint(ctx context.Context, token string, u *Checkpoint
 	if err := u.Validate(); err != nil {
 		return 0, fmt.Errorf("invalid checkpoint: %w", err)
 	}
-	return c.do(ctx, http.MethodPost, sessionPath(u.SessionID, "checkpoint"), uploadToPB(u), nil, request{compress: true, token: token})
+	return c.do(ctx, bigav1.RoutePostCheckpointMethod, routePath(bigav1.RoutePostCheckpointPath, u.SessionID), uploadToPB(u), nil, request{compress: true, token: token})
 }
 
 // UploadSnapshot replaces the session's file tree and returns the size of
@@ -131,7 +131,7 @@ func (c *Client) UploadSnapshot(ctx context.Context, token string, s *FileSnapsh
 	if s.SessionID == "" || s.Tree == nil {
 		return 0, errors.New("invalid snapshot: missing session id or tree")
 	}
-	return c.do(ctx, http.MethodPost, sessionPath(s.SessionID, "snapshot"), snapshotToPB(s), nil, request{
+	return c.do(ctx, bigav1.RoutePostSnapshotMethod, routePath(bigav1.RoutePostSnapshotPath, s.SessionID), snapshotToPB(s), nil, request{
 		timeout:  uploadTimeout,
 		compress: true,
 		progress: onProgress,
@@ -143,7 +143,7 @@ func (c *Client) UploadSnapshot(ctx context.Context, token string, s *FileSnapsh
 // the session, so only those need uploading.
 func (c *Client) MissingBlobs(ctx context.Context, sessionID, token string, hashes []string) ([]string, error) {
 	var res bigav1.MissingBlobsResponse
-	_, err := c.do(ctx, http.MethodPost, sessionPath(sessionID, "blobs/missing"),
+	_, err := c.do(ctx, bigav1.RouteMissingBlobsMethod, routePath(bigav1.RouteMissingBlobsPath, sessionID),
 		&bigav1.MissingBlobsRequest{Hashes: hashes}, &res, request{attempts: 2, token: token})
 	if err != nil {
 		return nil, err
@@ -157,15 +157,24 @@ func (c *Client) UploadBlobs(ctx context.Context, sessionID, token string, blobs
 	if len(blobs) == 0 {
 		return 0, errors.New("invalid blob upload: no blobs")
 	}
-	return c.do(ctx, http.MethodPost, sessionPath(sessionID, "blobs"), blobsToPB(blobs), nil, request{
+	return c.do(ctx, bigav1.RouteUploadBlobsMethod, routePath(bigav1.RouteUploadBlobsPath, sessionID), blobsToPB(blobs), nil, request{
 		timeout: uploadTimeout, compress: true, token: token,
 	})
 }
 
-func sessionPath(sessionID, action string) string {
-	p := "/api/sessions/" + url.PathEscape(sessionID)
-	if action != "" {
-		p += "/" + action
+// routePath fills the {placeholders} of a route's path template, in order,
+// with values escaped for a URL path.
+func routePath(template string, values ...string) string {
+	var b strings.Builder
+	for len(values) > 0 {
+		start, end := strings.IndexByte(template, '{'), strings.IndexByte(template, '}')
+		if start < 0 || end < start {
+			break
+		}
+		b.WriteString(template[:start])
+		b.WriteString(url.PathEscape(values[0]))
+		template, values = template[end+1:], values[1:]
 	}
-	return p
+	b.WriteString(template)
+	return b.String()
 }

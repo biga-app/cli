@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
 
 // ErrManifestUnavailable is returned by [Client.Manifest] when the server
@@ -96,7 +98,7 @@ func IsOwnershipError(err error) bool {
 		return false
 	}
 	switch se.Code {
-	case "unauthorized", "forbidden", "session_locked":
+	case bigav1.ErrorCodeUnauthorized, bigav1.ErrorCodeForbidden, bigav1.ErrorCodeSessionLocked:
 		return se.StatusCode == http.StatusUnauthorized || se.StatusCode == http.StatusForbidden
 	}
 	return false
@@ -106,7 +108,7 @@ func IsOwnershipError(err error) bool {
 // client does not have, or rejected the one it sent.
 func IsAccessKeyError(err error) bool {
 	se, ok := errors.AsType[*StatusError](err)
-	return ok && (se.Code == "access_key_required" || se.Code == "access_key_invalid")
+	return ok && (se.Code == bigav1.ErrorCodeAccessKeyRequired || se.Code == bigav1.ErrorCodeAccessKeyInvalid)
 }
 
 // IsMissingBlob reports whether the server refused a snapshot because some
@@ -114,7 +116,7 @@ func IsAccessKeyError(err error) bool {
 // changed while uploading.
 func IsMissingBlob(err error) bool {
 	se, ok := errors.AsType[*StatusError](err)
-	return ok && se.Code == "missing_blob"
+	return ok && se.Code == bigav1.ErrorCodeMissingBlob
 }
 
 // IsUnreachable reports whether err means the server could not be reached.

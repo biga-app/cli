@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"net/http"
-	"net/url"
 
 	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 )
@@ -21,7 +19,7 @@ type ExtensionGrant struct {
 
 func (c *Client) CreateExtension(ctx context.Context, sessionID, ownerToken, name string) (ExtensionGrant, error) {
 	var grant bigav1.ExtensionGrant
-	_, err := c.do(ctx, http.MethodPost, sessionPath(sessionID, "extensions"), &bigav1.CreateExtensionRequest{Name: name}, &grant, request{attempts: 1, token: ownerToken})
+	_, err := c.do(ctx, bigav1.RouteCreateExtensionMethod, routePath(bigav1.RouteCreateExtensionPath, sessionID), &bigav1.CreateExtensionRequest{Name: name}, &grant, request{attempts: 1, token: ownerToken})
 	if err != nil {
 		return ExtensionGrant{}, err
 	}
@@ -30,7 +28,7 @@ func (c *Client) CreateExtension(ctx context.Context, sessionID, ownerToken, nam
 
 func (c *Client) Extensions(ctx context.Context, sessionID, ownerToken string) ([]Extension, error) {
 	var list bigav1.ListExtensionsResponse
-	if _, err := c.do(ctx, http.MethodGet, sessionPath(sessionID, "extensions"), nil, &list, request{attempts: 2, token: ownerToken}); err != nil {
+	if _, err := c.do(ctx, bigav1.RouteListExtensionsMethod, routePath(bigav1.RouteListExtensionsPath, sessionID), nil, &list, request{attempts: 2, token: ownerToken}); err != nil {
 		return nil, err
 	}
 	extensions := make([]Extension, len(list.GetExtensions()))
@@ -41,6 +39,6 @@ func (c *Client) Extensions(ctx context.Context, sessionID, ownerToken string) (
 }
 
 func (c *Client) RevokeExtension(ctx context.Context, sessionID, ownerToken, id string) error {
-	_, err := c.do(ctx, http.MethodDelete, sessionPath(sessionID, "extensions/"+url.PathEscape(id)), nil, nil, request{attempts: 2, token: ownerToken})
+	_, err := c.do(ctx, bigav1.RouteRevokeExtensionMethod, routePath(bigav1.RouteRevokeExtensionPath, sessionID, id), nil, nil, request{attempts: 2, token: ownerToken})
 	return err
 }
