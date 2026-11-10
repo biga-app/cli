@@ -29,6 +29,7 @@ const (
 	EnvStabilityMS   = "BIGA_STABILITY_MS"
 	EnvHeartbeatMS   = "BIGA_HEARTBEAT_MS"
 	EnvNoUpdateCheck = "BIGA_NO_UPDATE_CHECK"
+	EnvSecretScan    = "BIGA_SECRET_SCAN"
 )
 
 // Timing holds the knobs that dominate the latency between a save and a
@@ -59,6 +60,9 @@ type Config struct {
 	Heartbeat time.Duration
 	// UpdateCheck reports whether to look for newer releases.
 	UpdateCheck bool
+	// SecretScan reports whether files whose content looks like a secret are
+	// withheld. BIGA_SECRET_SCAN=off turns it off.
+	SecretScan bool
 }
 
 // Load reads the configuration using getenv, normally [os.Getenv].
@@ -88,6 +92,7 @@ func Load(getenv func(string) string) (Config, error) {
 		},
 		Heartbeat:   millis(getenv(EnvHeartbeatMS), 10*time.Second),
 		UpdateCheck: getenv(EnvNoUpdateCheck) == "" && getenv("CI") == "",
+		SecretScan:  !strings.EqualFold(strings.TrimSpace(getenv(EnvSecretScan)), "off"),
 	}, nil
 }
 

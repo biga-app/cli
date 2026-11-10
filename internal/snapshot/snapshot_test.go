@@ -3,6 +3,7 @@ package snapshot
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/biga-app/cli/internal/api"
 	"github.com/biga-app/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/secrets"
 )
 
 func writeFiles(t *testing.T, root string, files map[string]string) {
@@ -33,7 +35,7 @@ func build(t *testing.T, root string) *api.FileNode {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := Build(t.Context(), openRoot(t, root), filter, nil)
+	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +132,9 @@ func TestBuildSkipsUnreadableFiles(t *testing.T) {
 
 	filter, _ := ignore.NewFilter(root)
 	var skipped []string
-	tree, err := Build(t.Context(), openRoot(t, root), filter, func(rel string, _ error) { skipped = append(skipped, rel) })
+	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{
+		OnSkip: func(rel string, _ error) { skipped = append(skipped, rel) },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +144,109 @@ func TestBuildSkipsUnreadableFiles(t *testing.T) {
 	}
 	if len(skipped) != 1 || skipped[0] != "locked.txt" {
 		t.Errorf("skipped = %v", skipped)
+	}
+}
+
+func TestReadFileWithholdsSecrets(t *testing.T) {
+	root := t.TempDir()
+	secret := "id = AKIA" + "IOSFODNN7EXAMPLE\n"
+	writeFiles(t, root, map[string]string{"config.txt": secret})
+	r := openRoot(t, root)
+
+	f, err := ReadFile(r, "config.txt", ReadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Binary || f.Content != "" || len(f.Withheld) != 1 || f.Size != int64(len(secret)) {
+		t.Fatalf("file = %+v", f)
+	}
+	if f.Hash != hashString(fmt.Sprintf("withheld:%d:config.txt", len(secret))) {
+		t.Errorf("hash = %s", f.Hash)
+	}
+
+	shared, err := ReadFile(r, "config.txt", ReadOptions{NoSecretScan: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shared.Binary || shared.Content != secret || len(shared.Withheld) != 0 {
+		t.Errorf("with scanning off, file = %+v", shared)
+	}
+
+	writeFiles(t, root, map[string]string{"config.txt": "id = redacted\n"})
+	cleaned, err := ReadFile(r, "config.txt", ReadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleaned.Binary || cleaned.Content == "" || cleaned.Hash == f.Hash {
+		t.Errorf("after removing the secret, file = %+v", cleaned)
+	}
+}
+
+func TestBuildReportsWithheldFiles(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"ok.txt":           "fine",
+		"deploy/creds.txt": "key = AKIA" + "IOSFODNN7EXAMPLE",
+	})
+	filter, _ := ignore.NewFilter(root)
+
+	withheld := map[string]string{}
+	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{
+		OnWithheld: func(rel string, findings []secrets.Finding) { withheld[rel] = findings[0].Rule },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withheld) != 1 || withheld["deploy/creds.txt"] != "AWS access key" {
+		t.Errorf("withheld = %v", withheld)
+	}
+	nodes := index(tree)
+	if n := nodes["deploy/creds.txt"]; n == nil || !n.Binary || n.Content != "" {
+		t.Errorf("creds.txt = %+v", n)
+	}
+	if n := nodes["ok.txt"]; n == nil || n.Content != "fine" {
+		t.Errorf("ok.txt = %+v", n)
+	}
+
+	withheld = map[string]string{}
+	if _, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{
+		NoSecretScan: true,
+		OnWithheld:   func(rel string, _ []secrets.Finding) { withheld[rel] = "x" },
+	}); err != nil || len(withheld) != 0 {
+		t.Errorf("with scanning off: withheld = %v, err = %v", withheld, err)
+	}
+}
+
+func TestBuildRestrictedToPaths(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"src/app.go":     "package app",
+		"src/.env":       "A=1",
+		"docs/guide.md":  "guide",
+		"dist/bundle.js": "bundle",
+		"main.go":        "package main",
+		"README.md":      "readme",
+	})
+	if err := os.MkdirAll(filepath.Join(root, "build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filter, _ := ignore.NewFilter(root)
+	filter.Restrict("src", "README.md")
+
+	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := index(tree)
+	for _, want := range []string{"src", "src/app.go", "README.md"} {
+		if nodes[want] == nil {
+			t.Errorf("missing %s", want)
+		}
+	}
+	for _, unwanted := range []string{"docs", "docs/guide.md", "main.go", "src/.env", "dist", "build"} {
+		if nodes[unwanted] != nil {
+			t.Errorf("%s should be outside the restriction", unwanted)
+		}
 	}
 }
 
@@ -162,7 +269,7 @@ func TestReadFileSkipsSymlinks(t *testing.T) {
 	}
 	root := openRoot(t, path)
 	for _, rel := range []string{"external/a.txt", "internal/a.txt", "file.txt"} {
-		if _, err := ReadFile(root, rel); !errors.Is(err, fs.ErrNotExist) {
+		if _, err := ReadFile(root, rel, ReadOptions{}); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("ReadFile(%q) returned %v, want not found", rel, err)
 		}
 	}

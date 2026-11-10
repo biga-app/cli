@@ -110,6 +110,53 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestFilterRestrict(t *testing.T) {
+	f, err := NewFilter(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Restrict("src", "README.md", "docs/guide/", "./pkg/../lib")
+
+	tests := []struct {
+		path  string
+		isDir bool
+		want  bool
+	}{
+		{"src", true, true},
+		{"src/app/main.go", false, true},
+		{"src/.env", false, false}, // the usual rules still apply inside
+		{"src/node_modules/x.js", false, false},
+		{"README.md", false, true},
+		{"README.md.bak", false, false},
+		{"srcs/app.go", false, false},
+		{"main.go", false, false},
+		{"docs", true, true}, // leads to docs/guide
+		{"docs", false, false},
+		{"docs/guide/intro.md", false, true},
+		{"docs/other.md", false, false},
+		{"lib/x.go", false, true},
+		{"other", true, false},
+	}
+	for _, tt := range tests {
+		if got := f.Accepts(tt.path, tt.isDir); got != tt.want {
+			t.Errorf("Accepts(%q, %v) = %v, want %v", tt.path, tt.isDir, got, tt.want)
+		}
+	}
+	if f.InScope("dist", true) {
+		t.Error("a stub directory outside the restriction is in scope")
+	}
+
+	f.Restrict(".")
+	if !f.Accepts("main.go", false) {
+		t.Error("restricting to the root should lift the restriction")
+	}
+	f.Restrict("src")
+	f.Restrict()
+	if !f.Accepts("main.go", false) {
+		t.Error("an empty restriction should lift it")
+	}
+}
+
 func TestFilterWithoutGitignore(t *testing.T) {
 	f, err := NewFilter(t.TempDir())
 	if err != nil {
@@ -207,12 +254,16 @@ func TestFilterExcludesSecretsByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{".env", ".env.production", "certs/server.pem", "deploy/id_ed25519", ".npmrc", ".aws/credentials", "a/.DS_Store"} {
+	for _, secret := range []string{
+		".env", ".env.production", "certs/server.pem", "deploy/id_ed25519", ".npmrc", ".aws/credentials", "a/.DS_Store",
+		"terraform.tfvars", "infra/prod.tfstate", "infra/prod.tfstate.backup", ".terraform/providers/x", ".kube/config",
+		"release.jks", "app.keystore", "vault.kdbx", ".git-credentials", ".docker/config.json", "sub/.docker/config.json",
+	} {
 		if f.Accepts(secret, false) {
 			t.Errorf("%s should be excluded by default", secret)
 		}
 	}
-	for _, safe := range []string{".env.example", "config/.env.sample", "keys.go"} {
+	for _, safe := range []string{".env.example", "config/.env.sample", "keys.go", "docker/config.json", "terraform.tfvars.example"} {
 		if !f.Accepts(safe, false) {
 			t.Errorf("%s should be shared", safe)
 		}

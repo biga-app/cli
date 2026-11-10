@@ -19,6 +19,7 @@ import (
 	"github.com/biga-app/cli/internal/browser"
 	"github.com/biga-app/cli/internal/config"
 	"github.com/biga-app/cli/internal/human"
+	"github.com/biga-app/cli/internal/secrets"
 	"github.com/biga-app/cli/internal/session"
 	"github.com/biga-app/cli/internal/ui"
 	"github.com/biga-app/cli/internal/workspace"
@@ -28,10 +29,13 @@ import (
 const shutdownTimeout = 10 * time.Second
 
 type startOptions struct {
-	dirs    []string
-	title   string
-	session string
-	open    bool
+	dirs         []string
+	title        string
+	session      string
+	open         bool
+	only         []string
+	dryRun       bool
+	noSecretScan bool
 }
 
 func (a *app) startCmd() *cobra.Command {
@@ -51,11 +55,18 @@ place resumes the same share URL.
 
 Files excluded by .gitignore files (at any depth), .bigaignore files, and
 your global git excludes are never shared, and neither are node_modules,
-.git, .env files, or private keys and credentials.
+.git, .env files, or private keys and credentials. Files whose content looks
+like a secret (a private key, a cloud or API token) are withheld too; add
+` + secrets.AllowMarker + ` to a line to share it anyway.
+
+To share only part of a project, list it with --only; nothing else is read.
+Use --dry-run to see what would be shared without contacting the server.
 
 In a terminal, press c to copy the link, o to open it, and q to stop.`,
 		Example: `  biga start
   biga start ./backend ./frontend
+  biga start --only src --only README.md
+  biga start --dry-run
   biga start --title "Live coding" --session my-talk --open`,
 		RunE: a.run(func(ctx context.Context, args []string) error {
 			opts.dirs = append(opts.dirs, args...)
@@ -66,6 +77,10 @@ In a terminal, press c to copy the link, o to open it, and q to stop.`,
 	cmd.Flags().StringVar(&opts.title, "title", "", "session title, when broadcasting a single directory")
 	cmd.Flags().StringVar(&opts.session, "session", "", "session ID to use instead of the directory's saved one")
 	cmd.Flags().BoolVar(&opts.open, "open", false, "open the share link in your browser once live")
+	cmd.Flags().StringArrayVar(&opts.only, "only", nil, "share only this file or directory, relative to the current directory (repeatable)")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "show what would be shared without contacting the server")
+	cmd.Flags().BoolVar(&opts.noSecretScan, "no-secret-scan", false,
+		fmt.Sprintf("share files even if they look like they contain secrets (or set %s=off)", config.EnvSecretScan))
 	cmd.MarkFlagDirname("dir")
 	return cmd
 }
@@ -92,6 +107,19 @@ func (a *app) start(ctx context.Context, opts startOptions) error {
 	if utf8.RuneCountInString(opts.title) > 120 {
 		return errors.New("--title must be at most 120 characters")
 	}
+	if len(opts.only) > 0 && len(projects) > 1 {
+		return errors.New("--only can only be used when broadcasting a single directory")
+	}
+	var only []string
+	if len(opts.only) > 0 {
+		if only, err = onlyPaths(projects[0].root, opts.only); err != nil {
+			return err
+		}
+	}
+	noSecretScan := opts.noSecretScan || !a.cfg.SecretScan
+	if opts.dryRun {
+		return a.dryRun(ctx, projects, only, noSecretScan)
+	}
 
 	client := a.client(a.cfg.APIURL)
 	excludes := config.GitExcludesFile()
@@ -109,6 +137,8 @@ func (a *app) start(ctx context.Context, opts startOptions) error {
 			SessionID:    opts.session,
 			GroupID:      p.group,
 			ExcludesFile: excludes,
+			Only:         only,
+			NoSecretScan: noSecretScan,
 			Timing:       a.cfg.Timing,
 			Heartbeat:    a.cfg.Heartbeat,
 		})

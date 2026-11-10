@@ -50,6 +50,16 @@ var defaultPatterns = []string{
 	".ssh/",
 	".aws/",
 	".gnupg/",
+	".kube/",
+	".terraform/",
+	"*.tfvars",
+	"*.tfstate",
+	"*.tfstate.*",
+	".git-credentials",
+	"*.jks",
+	"*.keystore",
+	"*.kdbx",
+	"**/.docker/config.json",
 }
 
 // patternFiles are read from every directory, in order, so .bigaignore rules
@@ -86,6 +96,7 @@ type Filter struct {
 	root       string
 	ignoreCase bool
 	base       *Matcher
+	only       []string // slash-separated, folded, relative to root; empty means everything
 
 	mu   sync.Mutex
 	dirs map[string]*Matcher // by slash-separated directory, "" for the root; nil when it has no patterns
@@ -123,12 +134,58 @@ func NewFilter(root string, extraFiles ...string) (*Filter, error) {
 	return f, nil
 }
 
+// Restrict limits what is broadcast to the given files and directories,
+// slash-separated and relative to the root. Everything else is rejected, and
+// the ignore rules still apply inside them. It must be called before the
+// filter is shared between goroutines. No paths, or the root itself, lift the
+// restriction.
+func (f *Filter) Restrict(roots ...string) {
+	f.only = nil
+	for _, r := range roots {
+		r = path.Clean(filepath.ToSlash(r))
+		if r == "." {
+			f.only = nil
+			return
+		}
+		f.only = append(f.only, f.fold(r))
+	}
+}
+
+// InScope reports whether the path is within what [Filter.Restrict] allows:
+// inside a listed path, or a directory leading to one. Without a restriction
+// everything is in scope.
+func (f *Filter) InScope(rel string, isDir bool) bool {
+	if len(f.only) == 0 {
+		return true
+	}
+	rel = f.fold(rel)
+	for _, root := range f.only {
+		if rel == root || strings.HasPrefix(rel, root+"/") {
+			return true
+		}
+		if isDir && strings.HasPrefix(root, rel+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *Filter) fold(s string) string {
+	if f.ignoreCase {
+		return strings.ToLower(s)
+	}
+	return s
+}
+
 // Accepts reports whether the slash-separated path, relative to the root, is
 // broadcast. The root itself, paths outside it, and anything beneath a stub
 // directory are never accepted. Stub directories themselves are rejected too;
 // callers that render stubs check [IsStubDir] first.
 func (f *Filter) Accepts(rel string, isDir bool) bool {
 	if rel == "" || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") || path.IsAbs(rel) {
+		return false
+	}
+	if !f.InScope(rel, isDir) {
 		return false
 	}
 	dir, name := path.Split(rel)

@@ -56,6 +56,28 @@ func TestLoadOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadSecretScan(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{"", true},
+		{"on", true},
+		{"1", true},
+		{"off", false},
+		{" OFF ", false},
+	}
+	for _, tt := range tests {
+		cfg, err := Load(env(map[string]string{EnvHome: "/h", EnvSecretScan: tt.value}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.SecretScan != tt.want {
+			t.Errorf("%s=%q: SecretScan = %v, want %v", EnvSecretScan, tt.value, cfg.SecretScan, tt.want)
+		}
+	}
+}
+
 func TestNormalizeAPIURL(t *testing.T) {
 	for _, bad := range []string{"localhost:3000", "ftp://x", "https://", ""} {
 		if _, err := NormalizeAPIURL(bad); err == nil {

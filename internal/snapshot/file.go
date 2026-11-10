@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/biga-app/cli/internal/secrets"
 )
 
 // MaxFileBytes is the largest file whose content is uploaded. Bigger files
@@ -31,9 +33,18 @@ type File struct {
 	Binary bool
 	// Oversize marks files larger than [MaxFileBytes].
 	Oversize bool
+	// Withheld lists why the content was not uploaded: it looks like it holds
+	// a secret. Withheld files are placeholders, like oversize ones.
+	Withheld []secrets.Finding
 }
 
-func ReadFile(root *os.Root, rel string) (File, error) {
+// ReadOptions adjusts how [ReadFile] treats a file.
+type ReadOptions struct {
+	// NoSecretScan shares files even when their content looks like a secret.
+	NoSecretScan bool
+}
+
+func ReadFile(root *os.Root, rel string, opts ReadOptions) (File, error) {
 	name, err := filepath.Localize(rel)
 	if err != nil {
 		return File{}, err
@@ -92,6 +103,17 @@ func ReadFile(root *os.Root, rel string) (File, error) {
 
 	if bytes.IndexByte(data, 0) >= 0 {
 		return File{Size: int64(len(data)), Hash: hashBytes(data), Binary: true}, nil
+	}
+
+	if !opts.NoSecretScan {
+		if findings := secrets.Scan(data); len(findings) > 0 {
+			return File{
+				Size:     int64(len(data)),
+				Hash:     hashString(fmt.Sprintf("withheld:%d:%s", len(data), rel)),
+				Binary:   true,
+				Withheld: findings,
+			}, nil
+		}
 	}
 
 	content := string(data)

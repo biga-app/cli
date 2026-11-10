@@ -171,11 +171,23 @@ type events struct {
 	synced   []Checkpoint
 	online   []bool
 	progress []string
+	warnings []string
 }
 
 func (e *events) Info(string)  {}
-func (e *events) Warn(string)  {}
 func (e *events) Error(string) {}
+
+func (e *events) Warn(msg string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.warnings = append(e.warnings, msg)
+}
+
+func (e *events) warned() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.warnings)
+}
 
 func (e *events) Progress(msg string) {
 	e.mu.Lock()
@@ -459,6 +471,89 @@ func TestBroadcastRetriesWhileServerIsDown(t *testing.T) {
 	})
 	if got := h.events.onlineChanges(); !slices.Equal(got, []bool{false, true}) {
 		t.Errorf("online changes = %v, want [false true]", got)
+	}
+}
+
+func (s *fakeServer) entry(path string) (api.CheckpointEntry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range slices.Backward(s.checkpoints) {
+		for _, e := range c.Entries {
+			if e.Path == path {
+				return e, true
+			}
+		}
+	}
+	return api.CheckpointEntry{}, false
+}
+
+func TestBroadcastWithholdsSecrets(t *testing.T) {
+	secret := "key = AKIA" + "IOSFODNN7EXAMPLE\n"
+	h := newHarness(t, map[string]string{"ok.txt": "fine", "config.txt": secret})
+	h.start()
+
+	h.server.with(func(s *fakeServer) {
+		files := s.snapshots[0].Tree.files()
+		if n := files["config.txt"]; !n.Binary || n.Content != "" {
+			t.Errorf("config.txt in snapshot = %+v", n)
+		}
+		if n := files["ok.txt"]; n.Content != "fine" {
+			t.Errorf("ok.txt in snapshot = %+v", n)
+		}
+	})
+	if got := h.events.warned(); len(got) != 1 || !strings.Contains(got[0], "Withheld config.txt") || !strings.Contains(got[0], "AWS access key on line 1") {
+		t.Errorf("warnings = %q", got)
+	}
+
+	write(t, h.root, "later.txt", "token: ghp_"+strings.Repeat("a1B2", 9))
+	eventually(t, "the new secret file", func() bool { return h.server.changes()["later.txt"] == api.ChangeAdded })
+	if e, _ := h.server.entry("later.txt"); !e.Binary || e.Content != "" {
+		t.Errorf("later.txt entry = %+v", e)
+	}
+
+	write(t, h.root, "config.txt", "key = redacted\n")
+	eventually(t, "the cleaned file", func() bool { return h.server.changes()["config.txt"] == api.ChangeModified })
+	if e, _ := h.server.entry("config.txt"); e.Binary || e.Content != "key = redacted\n" {
+		t.Errorf("cleaned config.txt entry = %+v", e)
+	}
+}
+
+func TestBroadcastSecretScanCanBeDisabled(t *testing.T) {
+	secret := "key = AKIA" + "IOSFODNN7EXAMPLE\n"
+	h := newHarness(t, map[string]string{"config.txt": secret})
+	h.opts.NoSecretScan = true
+	h.start()
+
+	h.server.with(func(s *fakeServer) {
+		if n := s.snapshots[0].Tree.files()["config.txt"]; n.Content != secret {
+			t.Errorf("config.txt in snapshot = %+v", n)
+		}
+	})
+	if got := h.events.warned(); len(got) != 0 {
+		t.Errorf("warnings = %q", got)
+	}
+}
+
+func TestBroadcastOnlySharesListedPaths(t *testing.T) {
+	h := newHarness(t, map[string]string{"src/a.go": "package a", "docs/b.md": "b", "root.go": "package main"})
+	h.opts.Only = []string{"src"}
+	h.start()
+
+	h.server.with(func(s *fakeServer) {
+		files := s.snapshots[0].Tree.files()
+		if _, ok := files["src/a.go"]; !ok || len(files) != 1 {
+			t.Errorf("snapshot files = %v", files)
+		}
+	})
+
+	write(t, h.root, "docs/c.md", "outside")
+	write(t, h.root, "newdir/x.go", "outside")
+	write(t, h.root, "src/d.go", "package a")
+	eventually(t, "the edit inside the listed path", func() bool { return h.server.changes()["src/d.go"] == api.ChangeAdded })
+	for path := range h.server.changes() {
+		if !strings.HasPrefix(path, "src/") {
+			t.Errorf("%s was synced outside --only", path)
+		}
 	}
 }
 

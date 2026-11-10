@@ -13,19 +13,31 @@ import (
 
 	"github.com/biga-app/cli/internal/api"
 	"github.com/biga-app/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/secrets"
 )
 
 // ReadConcurrency bounds how many files are read at once, so a large tree
 // cannot exhaust file descriptors.
 const ReadConcurrency = 16
 
+// BuildOptions adjusts [Build]. The zero value scans for secrets and reports
+// nothing.
+type BuildOptions struct {
+	NoSecretScan bool
+	// OnSkip is told about files that could not be read.
+	OnSkip func(rel string, err error)
+	// OnWithheld is told about files kept out because they look like they
+	// hold a secret. They stay in the tree as placeholders.
+	OnWithheld func(rel string, findings []secrets.Finding)
+}
+
 // Build reads root into a tree, leaving out paths the filter rejects.
 // Build-output directories appear as empty stubs. Files that cannot be read
-// are left out and reported to onSkip, which may be nil.
+// are left out and reported to opts.OnSkip.
 //
 // Symlinks and special files are skipped: following links risks cycles and
 // escaping the root.
-func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, onSkip func(rel string, err error)) (*api.FileNode, error) {
+func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, opts BuildOptions) (*api.FileNode, error) {
 	tree := &api.FileNode{Type: api.NodeDirectory, Name: filepath.Base(root.Name()), Path: "."}
 	var files []*fileJob
 	if err := walk(root.FS(), tree, filter, &files); err != nil {
@@ -41,12 +53,13 @@ func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, onSkip fun
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			f, err := ReadFile(root, job.node.Path)
+			f, err := ReadFile(root, job.node.Path, ReadOptions{NoSecretScan: opts.NoSecretScan})
 			if err != nil {
 				job.err = err
 				return nil
 			}
 			job.node.Size, job.node.Hash, job.node.Content, job.node.Binary = f.Size, f.Hash, f.Content, f.Binary
+			job.withheld = f.Withheld
 			return nil
 		})
 	}
@@ -56,11 +69,14 @@ func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, onSkip fun
 
 	failed := make(map[*api.FileNode]bool)
 	for _, job := range files {
-		if job.err != nil {
+		switch {
+		case job.err != nil:
 			failed[job.node] = true
-			if onSkip != nil {
-				onSkip(job.node.Path, job.err)
+			if opts.OnSkip != nil {
+				opts.OnSkip(job.node.Path, job.err)
 			}
+		case len(job.withheld) > 0 && opts.OnWithheld != nil:
+			opts.OnWithheld(job.node.Path, job.withheld)
 		}
 	}
 	if len(failed) > 0 {
@@ -70,8 +86,9 @@ func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, onSkip fun
 }
 
 type fileJob struct {
-	node *api.FileNode
-	err  error
+	node     *api.FileNode
+	err      error
+	withheld []secrets.Finding
 }
 
 func walk(root fs.FS, dir *api.FileNode, filter *ignore.Filter, files *[]*fileJob) error {
@@ -93,7 +110,7 @@ func walk(root fs.FS, dir *api.FileNode, filter *ignore.Filter, files *[]*fileJo
 		}
 
 		switch {
-		case entry.IsDir() && ignore.IsStubDir(name):
+		case entry.IsDir() && ignore.IsStubDir(name) && filter.InScope(childRel, true):
 			// Stubs take precedence over .gitignore so build output is still
 			// visible as a folder when the project also ignores it.
 			dir.Children = append(dir.Children, &api.FileNode{

@@ -138,7 +138,7 @@ func (b *Broadcast) read(rel string) fileState {
 	if !b.filter.Accepts(rel, false) {
 		return fileState{rel: rel}
 	}
-	f, err := snapshot.ReadFile(b.root, rel)
+	f, err := snapshot.ReadFile(b.root, rel, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan})
 	if errors.Is(err, fs.ErrNotExist) {
 		return fileState{rel: rel}
 	}
@@ -206,6 +206,9 @@ func (b *Broadcast) apply(states []fileState) ([]api.CheckpointEntry, map[string
 			}
 			if st.file.Oversize {
 				b.events.Info(fmt.Sprintf("%s is larger than %d MB; viewers see a placeholder.", st.rel, snapshot.MaxFileBytes>>20))
+			}
+			if len(st.file.Withheld) > 0 {
+				b.events.Warn(withheldMessage(st.rel, st.file.Withheld))
 			}
 			b.hashes[st.rel] = st.file.Hash
 			entries = append(entries, st.file.Entry(st.rel, change))

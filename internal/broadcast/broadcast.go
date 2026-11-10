@@ -19,6 +19,7 @@ import (
 	"github.com/biga-app/cli/internal/config"
 	"github.com/biga-app/cli/internal/human"
 	"github.com/biga-app/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/secrets"
 	"github.com/biga-app/cli/internal/session"
 	"github.com/biga-app/cli/internal/snapshot"
 	"github.com/biga-app/cli/internal/watch"
@@ -82,6 +83,11 @@ type Options struct {
 	GroupID string
 	// ExcludesFile is the user's global gitignore, if any.
 	ExcludesFile string
+	// Only limits the broadcast to these paths, slash-separated and relative
+	// to RootDir. Empty shares everything the ignore rules allow.
+	Only []string
+	// NoSecretScan shares files even when their content looks like a secret.
+	NoSecretScan bool
 	Timing       config.Timing
 	Heartbeat    time.Duration
 }
@@ -282,6 +288,7 @@ func (b *Broadcast) Start(ctx context.Context) (res Result, err error) {
 	if b.filter, err = ignore.NewFilter(b.opts.RootDir, b.opts.ExcludesFile); err != nil {
 		return Result{}, err
 	}
+	b.filter.Restrict(b.opts.Only...)
 	if b.root, err = os.OpenRoot(b.opts.RootDir); err != nil {
 		return Result{}, err
 	}
@@ -301,8 +308,14 @@ func (b *Broadcast) Start(ctx context.Context) (res Result, err error) {
 	}
 
 	b.events.Progress("Scanning files…")
-	tree, err := snapshot.Build(ctx, b.root, b.filter, func(rel string, err error) {
-		b.events.Warn(fmt.Sprintf("Skipped %s: %v", rel, err))
+	tree, err := snapshot.Build(ctx, b.root, b.filter, snapshot.BuildOptions{
+		NoSecretScan: b.opts.NoSecretScan,
+		OnSkip: func(rel string, err error) {
+			b.events.Warn(fmt.Sprintf("Skipped %s: %v", rel, err))
+		},
+		OnWithheld: func(rel string, findings []secrets.Finding) {
+			b.events.Warn(withheldMessage(rel, findings))
+		},
 	})
 	if err != nil {
 		return Result{}, err
