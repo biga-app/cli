@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/e2ee"
 	"github.com/biga-app/cli/internal/ignore"
 	"github.com/biga-app/cli/internal/secrets"
 )
@@ -28,6 +29,11 @@ type BuildOptions struct {
 	// tree carries only hashes and sizes, so a large project does not have to
 	// fit in memory; content is read again when it is uploaded.
 	KeepContent bool
+	// Cipher seals content for an encrypted session; see [ReadOptions].
+	Cipher *e2ee.Cipher
+	// Cache is told each text file's plaintext as it is read, for an
+	// encrypted session. It may be called from several goroutines.
+	Cache func(rel, plain string)
 	// OnSkip is told about files that could not be read.
 	OnSkip func(rel string, err error)
 	// OnWithheld is told about files kept out because they look like they
@@ -57,12 +63,15 @@ func Build(ctx context.Context, root *os.Root, filter *ignore.Filter, opts Build
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			f, err := ReadFile(root, job.node.Path, ReadOptions{NoSecretScan: opts.NoSecretScan})
+			f, err := ReadFile(root, job.node.Path, ReadOptions{NoSecretScan: opts.NoSecretScan, Cipher: opts.Cipher})
 			if err != nil {
 				job.err = err
 				return nil
 			}
-			job.node.Size, job.node.Hash, job.node.Binary = f.Size, f.Hash, f.Binary
+			job.node.Size, job.node.Hash, job.node.Binary, job.node.Lines = f.Size, f.Hash, f.Binary, f.Lines
+			if opts.Cache != nil && f.Plain != "" {
+				opts.Cache(job.node.Path, f.Plain)
+			}
 			if opts.KeepContent {
 				job.node.Content = f.Content
 			}
@@ -220,10 +229,20 @@ func (f File) Entry(rel string, change api.ChangeType) api.CheckpointEntry {
 		Size:       f.Size,
 		Binary:     f.Binary,
 		Content:    f.Content,
+		Additions:  additionsOf(change, f),
 	}
 }
 
 // Deletion is the checkpoint entry for a removed file.
 func Deletion(rel string) api.CheckpointEntry {
 	return api.CheckpointEntry{Path: rel, ChangeType: api.ChangeDeleted}
+}
+
+// additionsOf is the line count a new file adds; for any other change the
+// counts need the previous content, which the caller may know.
+func additionsOf(change api.ChangeType, f File) int {
+	if change == api.ChangeAdded && !f.Binary {
+		return f.Lines
+	}
+	return 0
 }

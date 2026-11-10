@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/biga-app/cli/internal/e2ee"
+	"github.com/biga-app/cli/internal/linediff"
 	"github.com/biga-app/cli/internal/secrets"
 )
 
@@ -35,12 +37,28 @@ type File struct {
 	// Withheld lists why the content was not uploaded: it looks like it holds
 	// a secret. Withheld files are placeholders, like oversize ones.
 	Withheld []secrets.Finding
+	// Lines is how many lines a text file has.
+	Lines int
+	// Plain is the file's text, kept when the content is sealed so that line
+	// counts can be worked out locally.
+	Plain string
 }
 
 // ReadOptions adjusts how [ReadFile] treats a file.
 type ReadOptions struct {
 	// NoSecretScan shares files even when their content looks like a secret.
 	NoSecretScan bool
+	// Cipher seals text content and names every file by a keyed hash, for an
+	// encrypted session. Nil leaves content readable and names it by SHA-256.
+	Cipher *e2ee.Cipher
+}
+
+// idOf names content: its SHA-256, or a keyed hash for an encrypted session.
+func (o ReadOptions) idOf(data []byte) string {
+	if o.Cipher != nil {
+		return o.Cipher.ID(data)
+	}
+	return hashBytes(data)
 }
 
 func ReadFile(root *os.Root, rel string, opts ReadOptions) (File, error) {
@@ -94,28 +112,33 @@ func ReadFile(root *os.Root, rel string, opts ReadOptions) (File, error) {
 			Size: info.Size(),
 			// The content is unknown, so the hash only needs to change when
 			// the size does; keyed by path so it never collides with a blob.
-			Hash:     hashString(fmt.Sprintf("oversize:%d:%s", info.Size(), rel)),
+			Hash:     opts.idOf(fmt.Appendf(nil, "oversize:%d:%s", info.Size(), rel)),
 			Binary:   true,
 			Oversize: true,
 		}, nil
 	}
 
 	if bytes.IndexByte(data, 0) >= 0 {
-		return File{Size: int64(len(data)), Hash: hashBytes(data), Binary: true}, nil
+		return File{Size: int64(len(data)), Hash: opts.idOf(data), Binary: true}, nil
 	}
 
 	if !opts.NoSecretScan {
 		if findings := secrets.Scan(data); len(findings) > 0 {
 			return File{
 				Size:     int64(len(data)),
-				Hash:     hashString(fmt.Sprintf("withheld:%d:%s", len(data), rel)),
+				Hash:     opts.idOf(fmt.Appendf(nil, "withheld:%d:%s", len(data), rel)),
 				Binary:   true,
 				Withheld: findings,
 			}, nil
 		}
 	}
 
-	return File{Size: int64(len(data)), Hash: hashBytes(data), Content: string(data)}, nil
+	plain := string(data)
+	file := File{Size: int64(len(data)), Hash: opts.idOf(data), Content: plain, Lines: linediff.Lines(plain)}
+	if opts.Cipher != nil {
+		file.Content, file.Plain = string(opts.Cipher.Seal(file.Hash, data)), plain
+	}
+	return file, nil
 }
 
 // EmptyHash is the hash of an empty file, which needs no uploaded content.

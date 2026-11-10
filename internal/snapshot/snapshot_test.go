@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/e2ee"
 	"github.com/biga-app/cli/internal/ignore"
 	"github.com/biga-app/cli/internal/secrets"
 )
@@ -362,5 +364,107 @@ func TestDiffInSync(t *testing.T) {
 	manifest := &api.Manifest{Files: []api.ManifestEntry{{Path: "a.txt", Hash: Hashes(tree)["a.txt"]}}}
 	if entries := Diff(manifest, tree); entries != nil {
 		t.Errorf("Diff = %v, want nil", entries)
+	}
+}
+
+func testCipher(t *testing.T) *e2ee.Cipher {
+	t.Helper()
+	key, err := e2ee.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := e2ee.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestReadFileSealsContentForAnEncryptedSession(t *testing.T) {
+	root := t.TempDir()
+	text := "line one\nline two\n"
+	writeFiles(t, root, map[string]string{
+		"a.txt":   text,
+		"bin.dat": "\x00\x01\x02",
+		"key.txt": "key = AKIA" + "IOSFODNN7EXAMPLE\n",
+	})
+	r := openRoot(t, root)
+	c := testCipher(t)
+	opts := ReadOptions{Cipher: c}
+
+	f, err := ReadFile(r, "a.txt", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := ReadFile(r, "a.txt", ReadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Hash != c.ID([]byte(text)) || f.Hash == plain.Hash || f.Size != int64(len(text)) || f.Lines != 2 || f.Plain != text {
+		t.Fatalf("file = %+v", f)
+	}
+	if strings.Contains(f.Content, "line one") {
+		t.Error("the content is not sealed")
+	}
+	if opened, err := c.Open(f.Hash, []byte(f.Content)); err != nil || string(opened) != text {
+		t.Errorf("opened %q, %v", opened, err)
+	}
+
+	bin, err := ReadFile(r, "bin.dat", opts)
+	if err != nil || !bin.Binary || bin.Content != "" || bin.Hash != c.ID([]byte("\x00\x01\x02")) {
+		t.Errorf("a binary keeps its keyed name and sends no content: %+v, %v", bin, err)
+	}
+
+	secret, err := ReadFile(r, "key.txt", opts)
+	if err != nil || len(secret.Withheld) != 1 || secret.Content != "" || !secret.Binary {
+		t.Errorf("the secret scan still runs on the plaintext: %+v, %v", secret, err)
+	}
+	if secret.Hash == hashString("withheld:34:key.txt") {
+		t.Error("a placeholder is named with an unkeyed hash")
+	}
+}
+
+func TestBuildReportsPlaintextAndLinesForAnEncryptedSession(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{"a.txt": "x\ny\n", "sub/b.txt": "z"})
+	filter, _ := ignore.NewFilter(root)
+	var mu sync.Mutex
+	seen := map[string]string{}
+	tree, err := Build(t.Context(), openRoot(t, root), filter, BuildOptions{
+		Cipher: testCipher(t),
+		Cache: func(rel, plain string) {
+			mu.Lock()
+			defer mu.Unlock()
+			seen[rel] = plain
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen["a.txt"] != "x\ny\n" || seen["sub/b.txt"] != "z" {
+		t.Errorf("cache saw %v", seen)
+	}
+	lines := map[string]int{}
+	for _, n := range Files(tree) {
+		lines[n.Path] = n.Lines
+		if n.Content != "" {
+			t.Errorf("%s keeps content in a hash-only tree", n.Path)
+		}
+	}
+	if lines["a.txt"] != 2 || lines["sub/b.txt"] != 1 {
+		t.Errorf("lines = %v", lines)
+	}
+}
+
+func TestAddedFilesCarryTheirLineCount(t *testing.T) {
+	f := File{Size: 5, Hash: strings.Repeat("a", 64), Lines: 7}
+	if e := f.Entry("a.txt", api.ChangeAdded); e.Additions != 7 {
+		t.Errorf("added entry = %+v", e)
+	}
+	if e := f.Entry("a.txt", api.ChangeModified); e.Additions != 0 {
+		t.Errorf("a modified entry needs the previous content to be counted: %+v", e)
+	}
+	if e := (File{Binary: true, Lines: 3}).Entry("a.bin", api.ChangeAdded); e.Additions != 0 {
+		t.Errorf("a binary has no lines: %+v", e)
 	}
 }

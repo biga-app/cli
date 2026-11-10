@@ -38,6 +38,9 @@ type FileNode struct {
 	Children []*FileNode
 	// Ignored marks build-output directories shown as empty stubs.
 	Ignored bool
+	// Lines is the file's line count, which an encrypted session reports
+	// because the server cannot read the content to count it.
+	Lines int
 }
 
 // FileSnapshot is the full tree uploaded when a broadcast starts.
@@ -70,6 +73,9 @@ type CheckpointEntry struct {
 	// Binary entries carry no content.
 	Binary  bool
 	Content string
+	// Additions and Deletions are line counts, reported for an encrypted
+	// session. For other sessions the server counts them itself.
+	Additions, Deletions int
 }
 
 // CheckpointUpload is one save burst's worth of changes.
@@ -138,6 +144,9 @@ type CreateSessionInput struct {
 	Title string
 	// GroupID links sessions started together from one workspace file.
 	GroupID string
+	// Encrypted asks for a session whose content only this machine and the
+	// holders of its link can read. It is fixed when the session is created.
+	Encrypted bool
 }
 
 // Session is the server's view of a broadcast session.
@@ -157,6 +166,8 @@ type Session struct {
 	ShareURL string
 	// Limits is what the server accepts, so an upload can fail early.
 	Limits Limits
+	// Encrypted reports whether the session's content is sealed.
+	Encrypted bool
 }
 
 // Limits is what a server accepts. A zero field means the server did not say.

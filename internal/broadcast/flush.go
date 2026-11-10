@@ -17,6 +17,7 @@ import (
 
 	"github.com/biga-app/cli/internal/api"
 	"github.com/biga-app/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/linediff"
 	"github.com/biga-app/cli/internal/snapshot"
 )
 
@@ -117,6 +118,36 @@ func (b *Broadcast) rollback(entries []api.CheckpointEntry, priors map[string]pr
 	}
 }
 
+// counted adds the line counts an encrypted session has to report itself,
+// worked out against the file's text as of the last sync when that is known.
+func (b *Broadcast) counted(e api.CheckpointEntry, f snapshot.File) api.CheckpointEntry {
+	if b.plain == nil {
+		return e
+	}
+	if f.Binary {
+		b.plain.drop(e.Path)
+		return e
+	}
+	if old, ok := b.plain.get(e.Path); ok && e.ChangeType == api.ChangeModified {
+		e.Additions, e.Deletions = linediff.Count(old, f.Plain)
+	}
+	b.plain.put(e.Path, f.Plain)
+	return e
+}
+
+// deletion is the entry for a removed file, with the lines it took away when
+// an encrypted session knows them.
+func (b *Broadcast) deletion(rel string) api.CheckpointEntry {
+	e := snapshot.Deletion(rel)
+	if b.plain != nil {
+		if old, ok := b.plain.get(rel); ok {
+			e.Deletions = linediff.Lines(old)
+		}
+		b.plain.drop(rel)
+	}
+	return e
+}
+
 // readAll reads the current state of each path, a bounded number at a time.
 func (b *Broadcast) readAll(paths []string) []fileState {
 	states := make([]fileState, len(paths))
@@ -137,7 +168,7 @@ func (b *Broadcast) read(rel string) fileState {
 	if !b.filter.Accepts(rel, false) {
 		return fileState{rel: rel}
 	}
-	f, err := snapshot.ReadFile(b.root, rel, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan})
+	f, err := snapshot.ReadFile(b.root, rel, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan, Cipher: b.cipher})
 	if errors.Is(err, fs.ErrNotExist) {
 		return fileState{rel: rel}
 	}
@@ -195,7 +226,7 @@ func (b *Broadcast) apply(states []fileState) ([]api.CheckpointEntry, map[string
 				continue
 			}
 			delete(b.hashes, st.rel)
-			entries = append(entries, snapshot.Deletion(st.rel))
+			entries = append(entries, b.deletion(st.rel))
 		case tracked && old == st.file.Hash:
 			continue
 		default:
@@ -210,7 +241,7 @@ func (b *Broadcast) apply(states []fileState) ([]api.CheckpointEntry, map[string
 				b.events.Warn(withheldMessage(st.rel, st.file.Withheld))
 			}
 			b.hashes[st.rel] = st.file.Hash
-			entries = append(entries, st.file.Entry(st.rel, change))
+			entries = append(entries, b.counted(st.file.Entry(st.rel, change), st.file))
 		}
 		priors[st.rel] = prior{hash: old, tracked: tracked}
 	}
@@ -260,7 +291,7 @@ func (b *Broadcast) fill(entries []api.CheckpointEntry) error {
 		if e.ChangeType == api.ChangeDeleted || e.Binary || e.Content != "" || e.Size == 0 {
 			continue
 		}
-		f, err := snapshot.ReadFile(b.root, e.Path, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan})
+		f, err := snapshot.ReadFile(b.root, e.Path, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan, Cipher: b.cipher})
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			entries[i] = snapshot.Deletion(e.Path)

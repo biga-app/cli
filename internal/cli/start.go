@@ -36,6 +36,7 @@ type startOptions struct {
 	only         []string
 	dryRun       bool
 	noSecretScan bool
+	encrypt      bool
 }
 
 func (a *app) startCmd() *cobra.Command {
@@ -62,11 +63,18 @@ like a secret (a private key, a cloud or API token) are withheld too; add
 To share only part of a project, list it with --only; nothing else is read.
 Use --dry-run to see what would be shared without contacting the server.
 
+With --encrypt, file contents are sealed on your machine with a key that is
+part of the share link after the #, which browsers never send to a server. The
+server stores contents it cannot read. File names, sizes, line counts and the
+session title stay visible to it, and anyone with the full link can read the
+files. A session cannot be switched between encrypted and not.
+
 In a terminal, press c to copy the link, o to open it, and q to stop.`,
 		Example: `  biga start
   biga start ./backend ./frontend
   biga start --only src --only README.md
   biga start --dry-run
+  biga start --encrypt
   biga start --title "Live coding" --session my-talk --open`,
 		RunE: a.run(func(ctx context.Context, args []string) error {
 			opts.dirs = append(opts.dirs, args...)
@@ -79,6 +87,7 @@ In a terminal, press c to copy the link, o to open it, and q to stop.`,
 	cmd.Flags().BoolVar(&opts.open, "open", false, "open the share link in your browser once live")
 	cmd.Flags().StringArrayVar(&opts.only, "only", nil, "share only this file or directory, relative to the current directory (repeatable)")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "show what would be shared without contacting the server")
+	cmd.Flags().BoolVar(&opts.encrypt, "encrypt", false, "seal file contents with a key that stays in the share link")
 	cmd.Flags().BoolVar(&opts.noSecretScan, "no-secret-scan", false,
 		fmt.Sprintf("share files even if they look like they contain secrets (or set %s=off)", config.EnvSecretScan))
 	cmd.MarkFlagDirname("dir")
@@ -139,6 +148,7 @@ func (a *app) start(ctx context.Context, opts startOptions) error {
 			ExcludesFile: excludes,
 			Only:         only,
 			NoSecretScan: noSecretScan,
+			Encrypt:      opts.encrypt,
 			Timing:       a.cfg.Timing,
 			Heartbeat:    a.cfg.Heartbeat,
 		})
@@ -171,6 +181,11 @@ func (a *app) start(ctx context.Context, opts startOptions) error {
 			return
 		}
 		view.Live()
+		for i, b := range broadcasts {
+			if b.Encrypted() {
+				view.Log(i, ui.LevelInfo, "Encrypted: the key is in the link after the #. Anyone with the whole link can read your files.")
+			}
+		}
 		if opts.open {
 			for i, b := range broadcasts {
 				if err := browser.Open(b.ShareURL()); err != nil {

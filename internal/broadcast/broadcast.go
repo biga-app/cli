@@ -17,6 +17,7 @@ import (
 
 	"github.com/biga-app/cli/internal/api"
 	"github.com/biga-app/cli/internal/config"
+	"github.com/biga-app/cli/internal/e2ee"
 	"github.com/biga-app/cli/internal/human"
 	"github.com/biga-app/cli/internal/ignore"
 	"github.com/biga-app/cli/internal/secrets"
@@ -88,8 +89,11 @@ type Options struct {
 	Only []string
 	// NoSecretScan shares files even when their content looks like a secret.
 	NoSecretScan bool
-	Timing       config.Timing
-	Heartbeat    time.Duration
+	// Encrypt starts an encrypted session: file content is sealed with a key
+	// that only this machine and holders of the share link have.
+	Encrypt   bool
+	Timing    config.Timing
+	Heartbeat time.Duration
 }
 
 // Sync describes how [Broadcast.Start] brought the server up to date.
@@ -131,6 +135,11 @@ type Broadcast struct {
 	ownerTok  string
 	shareLink string
 	limits    api.Limits
+
+	// cipher seals content when the session is encrypted, otherwise nil.
+	cipher  *e2ee.Cipher
+	keyText string
+	plain   *plainCache
 
 	filter  *ignore.Filter
 	root    *os.Root
@@ -188,14 +197,57 @@ func New(opts Options) (*Broadcast, error) {
 			b.startedAt = saved.StartedAt
 		}
 	}
+	if err := b.setUpEncryption(saved, found); err != nil {
+		return nil, err
+	}
 
 	var savedTitle string
 	if found {
 		savedTitle = saved.Title
 	}
 	title := cmp.Or(strings.TrimSpace(opts.Title), savedTitle, filepath.Base(opts.RootDir))
-	b.input = api.CreateSessionInput{Title: truncate(title, maxTitleLen), GroupID: opts.GroupID}
+	b.input = api.CreateSessionInput{Title: truncate(title, maxTitleLen), GroupID: opts.GroupID, Encrypted: b.cipher != nil}
 	return b, nil
+}
+
+// setUpEncryption decides whether the session is encrypted and prepares its
+// cipher. A session saved with a key stays encrypted whatever the flags say,
+// since it cannot change; a new encrypted session gets a new key.
+func (b *Broadcast) setUpEncryption(saved session.Record, found bool) error {
+	sameSession := found && saved.SessionID == b.sessionID
+	var (
+		key e2ee.Key
+		err error
+	)
+	switch {
+	case sameSession && saved.Key != "":
+		if key, err = e2ee.ParseKey(saved.Key); err != nil {
+			return fmt.Errorf("the key saved for %s is damaged: %w", b.opts.RootDir, err)
+		}
+	case b.opts.Encrypt && sameSession:
+		return fmt.Errorf("session %s is not encrypted, and a session cannot become encrypted; choose a different --session", b.sessionID)
+	case b.opts.Encrypt:
+		if key, err = e2ee.NewKey(); err != nil {
+			return err
+		}
+	default:
+		return nil
+	}
+	if b.cipher, err = e2ee.New(key); err != nil {
+		return err
+	}
+	b.keyText, b.plain = key.String(), newPlainCache(plainCacheBytes)
+	return nil
+}
+
+// Encrypted reports whether the session's content is sealed.
+func (b *Broadcast) Encrypted() bool { return b.cipher != nil }
+
+// remember keeps a file's text, so the next save can be counted against it.
+func (b *Broadcast) remember(rel, plain string) {
+	if b.plain != nil {
+		b.plain.put(rel, plain)
+	}
 }
 
 // SessionID is the broadcast's session ID.
@@ -212,9 +264,9 @@ func (b *Broadcast) ShareURL() string {
 	b.cred.Lock()
 	defer b.cred.Unlock()
 	if b.shareLink != "" {
-		return b.shareLink
+		return session.WithKey(b.shareLink, b.keyText)
 	}
-	return session.ShareURL(b.opts.APIURL, b.sessionID)
+	return session.WithKey(session.ShareURL(b.opts.APIURL, b.sessionID), b.keyText)
 }
 
 // token is the session's owner token.
@@ -262,6 +314,12 @@ func (b *Broadcast) ensureSession(ctx context.Context) error {
 	}
 	if err != nil {
 		return err
+	}
+	if s.Encrypted != (b.cipher != nil) {
+		if s.Encrypted {
+			return fmt.Errorf("session %s is encrypted, but its key is not saved on this machine; choose a different --session", b.sessionID)
+		}
+		return fmt.Errorf("session %s is not encrypted, and a session cannot become encrypted; choose a different --session", b.sessionID)
 	}
 	b.adopt(s)
 	return nil
@@ -348,6 +406,8 @@ func (b *Broadcast) scanAndUpload(ctx context.Context) (*api.FileNode, Result, e
 		b.events.Progress("Scanning files…")
 		tree, err := snapshot.Build(ctx, b.root, b.filter, snapshot.BuildOptions{
 			NoSecretScan: b.opts.NoSecretScan,
+			Cipher:       b.cipher,
+			Cache:        b.remember,
 			OnSkip: func(rel string, err error) {
 				b.events.Warn(fmt.Sprintf("Skipped %s: %v", rel, err))
 			},
@@ -495,6 +555,7 @@ func (b *Broadcast) persist(live bool) error {
 		LastSeenAt:        time.Now(),
 		Token:             token,
 		ShareLink:         link,
+		Key:               b.keyText,
 	}
 	if live {
 		rec.PID = os.Getpid()

@@ -21,6 +21,7 @@ import (
 	"github.com/biga-app/cli/internal/api"
 	bigav1 "github.com/biga-app/cli/internal/api/apipb/biga/v1"
 	"github.com/biga-app/cli/internal/config"
+	"github.com/biga-app/cli/internal/e2ee"
 	"github.com/biga-app/cli/internal/session"
 )
 
@@ -52,6 +53,10 @@ type fakeServer struct {
 	snapshotTries   int
 	// limits is reported when a session is created; zero fields are omitted.
 	limits bigav1.Limits
+	// encrypted records which sessions were created encrypted; ignoreEncrypt
+	// makes the server answer as one that does not know about encryption.
+	encrypted     map[string]bool
+	ignoreEncrypt bool
 }
 
 type snapshotBody struct {
@@ -99,6 +104,14 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := parts[0]
 	token, exists := s.tokens[id]
 	if r.Method == http.MethodPut && action == "" && !exists {
+		if s.encrypted == nil {
+			s.encrypted = map[string]bool{}
+		}
+		var put bigav1.PutSessionRequest
+		if body, _ := io.ReadAll(r.Body); len(body) > 0 {
+			_ = proto.Unmarshal(body, &put)
+		}
+		s.encrypted[id] = put.GetEncrypted() && !s.ignoreEncrypt
 		token = fmt.Sprintf("bgs_%s_%d", id, len(s.tokens))
 		s.tokens[id] = token
 		s.upserts++
@@ -157,7 +170,7 @@ func (s *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var batch []string
 		for _, b := range msg.GetBlobs() {
 			sum := sha256.Sum256(b.GetContent())
-			if hex.EncodeToString(sum[:]) != b.GetHash() {
+			if !s.encrypted[id] && hex.EncodeToString(sum[:]) != b.GetHash() {
 				s.t.Errorf("blob %s does not match its content", b.GetHash())
 			}
 			s.blobs[b.GetHash()] = string(b.GetContent())
@@ -244,6 +257,7 @@ func (s *fakeServer) resolve(n *treeNode) (missing []string) {
 
 func (s *fakeServer) grant(id, token string) *bigav1.SessionGrant {
 	g := sessionGrant(id, token)
+	g.Session.Encrypted = s.encrypted[id]
 	if s.limits.GetMaxSnapshotFiles() > 0 || s.limits.GetMaxBlobBatchBytes() > 0 {
 		g.Limits = &bigav1.Limits{MaxSnapshotFiles: s.limits.GetMaxSnapshotFiles(), MaxBlobBatchBytes: s.limits.GetMaxBlobBatchBytes()}
 	}
@@ -285,6 +299,7 @@ func uploadFromPB(u *bigav1.CheckpointUpload) api.CheckpointUpload {
 		out.Entries = append(out.Entries, api.CheckpointEntry{
 			Path: e.GetPath(), ChangeType: changeTypes[e.GetChangeType()], Hash: e.Hash,
 			Size: e.GetSize(), Binary: e.GetBinary(), Content: string(e.GetContent()),
+			Additions: int(e.GetAdditions()), Deletions: int(e.GetDeletions()),
 		})
 	}
 	return out
@@ -1103,5 +1118,192 @@ func TestBroadcastRefusesSomeoneElsesSession(t *testing.T) {
 	}
 	if _, err := b.Start(t.Context()); err == nil || !strings.Contains(err.Error(), "belongs to another broadcast") {
 		t.Fatalf("Start = %v, want an ownership error", err)
+	}
+}
+
+func keyFromLink(t *testing.T, link string) *e2ee.Cipher {
+	t.Helper()
+	_, text, ok := strings.Cut(link, "#k=")
+	if !ok {
+		t.Fatalf("the share link carries no key: %s", link)
+	}
+	key, err := e2ee.ParseKey(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := e2ee.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestEncryptedBroadcastSendsOnlySealedContent(t *testing.T) {
+	h := newHarness(t, map[string]string{
+		"main.go":   "package main\n\nfunc main() {}\n",
+		"notes.txt": "the launch code is 0000\n",
+		"empty.txt": "",
+	})
+	h.opts.Encrypt = true
+	b := h.start()
+
+	link := b.ShareURL()
+	c := keyFromLink(t, link)
+	if !b.Encrypted() || !strings.HasPrefix(link, "http") || strings.Count(link, "#") != 1 {
+		t.Fatalf("link = %s", link)
+	}
+	h.server.with(func(s *fakeServer) {
+		if !s.encrypted[b.SessionID()] {
+			t.Error("the session was not created encrypted")
+		}
+		files := s.snapshots[0].Tree.files()
+		for path, plain := range map[string]string{"main.go": "package main\n\nfunc main() {}\n", "notes.txt": "the launch code is 0000\n", "empty.txt": ""} {
+			n := files[path]
+			if strings.Contains(n.Content, "launch") || strings.Contains(n.Content, "package") {
+				t.Errorf("%s reached the server readable", path)
+			}
+			opened, err := c.Open(n.Hash, []byte(n.Content))
+			if err != nil || string(opened) != plain {
+				t.Errorf("%s opens to %q, %v", path, opened, err)
+			}
+			if n.Size != int64(len(plain)) {
+				t.Errorf("%s size = %d, want the plaintext size %d", path, n.Size, len(plain))
+			}
+		}
+		sum := sha256.Sum256([]byte("the launch code is 0000\n"))
+		if files["notes.txt"].Hash == hex.EncodeToString(sum[:]) {
+			t.Error("a file is named by its plain SHA-256, which a server could check a guess against")
+		}
+	})
+	rec, ok, err := h.store.Lookup(h.root)
+	if err != nil || !ok || rec.Key == "" || !strings.HasSuffix(rec.ShareURL(), "#k="+rec.Key) {
+		t.Errorf("the key is saved with the session: %+v, %v, %v", rec, ok, err)
+	}
+}
+
+func TestEncryptedBroadcastReportsLineCountsItself(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "one\ntwo\nthree\n", "gone.txt": "x\ny\n"})
+	h.opts.Encrypt = true
+	b := h.start()
+	c := keyFromLink(t, b.ShareURL())
+
+	write(t, h.root, "a.txt", "one\nTWO\nthree\nfour\n")
+	write(t, h.root, "new.txt", "a\nb\nc\n")
+	if err := os.Remove(filepath.Join(h.root, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the edits", func() bool {
+		ch := h.server.changes()
+		return ch["a.txt"] == api.ChangeModified && ch["new.txt"] == api.ChangeAdded && ch["gone.txt"] == api.ChangeDeleted
+	})
+
+	if e, _ := h.server.entry("a.txt"); e.Additions != 2 || e.Deletions != 1 {
+		t.Errorf("a.txt counts +%d -%d, want +2 -1", e.Additions, e.Deletions)
+	}
+	if e, _ := h.server.entry("new.txt"); e.Additions != 3 {
+		t.Errorf("new.txt additions = %d", e.Additions)
+	}
+	if e, _ := h.server.entry("gone.txt"); e.Deletions != 2 {
+		t.Errorf("gone.txt deletions = %d", e.Deletions)
+	}
+	e, _ := h.server.entry("a.txt")
+	if strings.Contains(e.Content, "four") {
+		t.Error("an edit reached the server readable")
+	}
+	if opened, err := c.Open(*e.Hash, []byte(e.Content)); err != nil || string(opened) != "one\nTWO\nthree\nfour\n" {
+		t.Errorf("the edit opens to %q, %v", opened, err)
+	}
+}
+
+func TestEncryptedSessionKeepsItsKeyWhenRejoined(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n"})
+	h.opts.Encrypt = true
+	first := h.start()
+	link := first.ShareURL()
+	if err := first.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	h.opts.Encrypt = false
+	again, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Encrypted() || !again.Rejoined() || again.ShareURL() != link {
+		t.Errorf("a saved encrypted session stays encrypted with the same link: %v %s", again.Encrypted(), again.ShareURL())
+	}
+	if _, err := again.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { again.Stop(t.Context()) })
+}
+
+func TestEncryptingAnUnencryptedSessionIsRefused(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n"})
+	first := h.start()
+	if err := first.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	h.opts.Encrypt = true
+	_, err := New(h.opts)
+	if err == nil || !strings.Contains(err.Error(), "cannot become encrypted") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAServerThatIgnoresEncryptionIsNotTrusted(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n"})
+	h.server.with(func(s *fakeServer) { s.ignoreEncrypt = true })
+	h.opts.Encrypt = true
+	b, err := New(h.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Start(t.Context()); err == nil || !strings.Contains(err.Error(), "not encrypted") {
+		t.Fatalf("err = %v", err)
+	}
+	batches, _ := h.server.uploadedBlobs()
+	if len(batches) != 0 {
+		t.Error("nothing should be uploaded to a session that cannot hold it encrypted")
+	}
+}
+
+func TestAnUnencryptedBroadcastIsUnchanged(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.txt": "alpha\n"})
+	b := h.start()
+	if b.Encrypted() || strings.Contains(b.ShareURL(), "#") {
+		t.Errorf("link = %s", b.ShareURL())
+	}
+	h.server.with(func(s *fakeServer) {
+		if n := s.snapshots[0].Tree.files()["a.txt"]; n.Content != "alpha\n" {
+			t.Errorf("content = %q", n.Content)
+		}
+	})
+}
+
+func TestPlainCacheKeepsRecentFilesWithinItsBudget(t *testing.T) {
+	c := newPlainCache(100)
+	c.put("a", strings.Repeat("a", 20))
+	c.put("b", strings.Repeat("b", 20))
+	c.put("huge", strings.Repeat("h", 60))
+	if _, ok := c.get("huge"); ok {
+		t.Error("a file over a quarter of the budget should not be kept")
+	}
+	for _, p := range []string{"c", "d", "e", "f", "g"} {
+		c.put(p, strings.Repeat(p, 24))
+	}
+	if _, ok := c.get("a"); ok {
+		t.Error("the oldest file should have been dropped")
+	}
+	if text, ok := c.get("g"); !ok || len(text) != 24 {
+		t.Errorf("the newest file should be kept: %q, %v", text, ok)
+	}
+	c.put("g", "new")
+	c.drop("g")
+	if _, ok := c.get("g"); ok {
+		t.Error("dropped")
+	}
+	if c.size < 0 || c.size > 100 {
+		t.Errorf("size = %d", c.size)
 	}
 }

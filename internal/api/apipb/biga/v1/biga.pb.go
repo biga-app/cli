@@ -177,15 +177,18 @@ func (LoadMode) EnumDescriptor() ([]byte, []int) {
 // Timestamps named *_at are RFC 3339 UTC strings with millisecond precision.
 // Timestamps named `timestamp` are Unix milliseconds.
 type Session struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Description   *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	Status        SessionStatus          `protobuf:"varint,4,opt,name=status,proto3,enum=biga.v1.SessionStatus" json:"status,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	EndedAt       *string                `protobuf:"bytes,7,opt,name=ended_at,json=endedAt,proto3,oneof" json:"ended_at,omitempty"`
-	GroupId       *string                `protobuf:"bytes,8,opt,name=group_id,json=groupId,proto3,oneof" json:"group_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title       string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Description *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	Status      SessionStatus          `protobuf:"varint,4,opt,name=status,proto3,enum=biga.v1.SessionStatus" json:"status,omitempty"`
+	CreatedAt   string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   string                 `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	EndedAt     *string                `protobuf:"bytes,7,opt,name=ended_at,json=endedAt,proto3,oneof" json:"ended_at,omitempty"`
+	GroupId     *string                `protobuf:"bytes,8,opt,name=group_id,json=groupId,proto3,oneof" json:"group_id,omitempty"`
+	// The client seals file content with a key the server never sees, so the
+	// server stores bytes it cannot read. Fixed when the session is created.
+	Encrypted     bool `protobuf:"varint,9,opt,name=encrypted,proto3" json:"encrypted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -276,11 +279,21 @@ func (x *Session) GetGroupId() string {
 	return ""
 }
 
+func (x *Session) GetEncrypted() bool {
+	if x != nil {
+		return x.Encrypted
+	}
+	return false
+}
+
 type PutSessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Title         *string                `protobuf:"bytes,1,opt,name=title,proto3,oneof" json:"title,omitempty"`
-	Description   *string                `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	GroupId       *string                `protobuf:"bytes,3,opt,name=group_id,json=groupId,proto3,oneof" json:"group_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Title       *string                `protobuf:"bytes,1,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	Description *string                `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	GroupId     *string                `protobuf:"bytes,3,opt,name=group_id,json=groupId,proto3,oneof" json:"group_id,omitempty"`
+	// Asks for an encrypted session when creating one. A session never changes
+	// from one kind to the other.
+	Encrypted     bool `protobuf:"varint,4,opt,name=encrypted,proto3" json:"encrypted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -334,6 +347,13 @@ func (x *PutSessionRequest) GetGroupId() string {
 		return *x.GroupId
 	}
 	return ""
+}
+
+func (x *PutSessionRequest) GetEncrypted() bool {
+	if x != nil {
+		return x.Encrypted
+	}
+	return false
 }
 
 // What the server accepts, so a client can fail early with a useful message.
@@ -569,11 +589,14 @@ func (*FileNode_Directory) isFileNode_Kind() {}
 // A snapshot may leave a text file's content out when the server already holds
 // a blob with its hash, uploaded through UploadBlobs.
 type FileInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Size          int64                  `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
-	Hash          string                 `protobuf:"bytes,2,opt,name=hash,proto3" json:"hash,omitempty"`
-	Binary        bool                   `protobuf:"varint,3,opt,name=binary,proto3" json:"binary,omitempty"`
-	Content       []byte                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Size    int64                  `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	Hash    string                 `protobuf:"bytes,2,opt,name=hash,proto3" json:"hash,omitempty"`
+	Binary  bool                   `protobuf:"varint,3,opt,name=binary,proto3" json:"binary,omitempty"`
+	Content []byte                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
+	// Lines in the file, reported by the client for an encrypted session, where
+	// the server cannot read the content to count them.
+	Lines         int32 `protobuf:"varint,5,opt,name=lines,proto3" json:"lines,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -634,6 +657,13 @@ func (x *FileInfo) GetContent() []byte {
 		return x.Content
 	}
 	return nil
+}
+
+func (x *FileInfo) GetLines() int32 {
+	if x != nil {
+		return x.Lines
+	}
+	return 0
 }
 
 type DirectoryInfo struct {
@@ -757,14 +787,17 @@ func (x *FileSnapshot) GetSequenceNum() int64 {
 }
 
 type CheckpointEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	ChangeType    ChangeType             `protobuf:"varint,2,opt,name=change_type,json=changeType,proto3,enum=biga.v1.ChangeType" json:"change_type,omitempty"`
-	OldPath       string                 `protobuf:"bytes,3,opt,name=old_path,json=oldPath,proto3" json:"old_path,omitempty"`
-	Hash          *string                `protobuf:"bytes,4,opt,name=hash,proto3,oneof" json:"hash,omitempty"`
-	Size          int64                  `protobuf:"varint,5,opt,name=size,proto3" json:"size,omitempty"`
-	Binary        bool                   `protobuf:"varint,6,opt,name=binary,proto3" json:"binary,omitempty"`
-	Content       []byte                 `protobuf:"bytes,7,opt,name=content,proto3" json:"content,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Path       string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	ChangeType ChangeType             `protobuf:"varint,2,opt,name=change_type,json=changeType,proto3,enum=biga.v1.ChangeType" json:"change_type,omitempty"`
+	OldPath    string                 `protobuf:"bytes,3,opt,name=old_path,json=oldPath,proto3" json:"old_path,omitempty"`
+	Hash       *string                `protobuf:"bytes,4,opt,name=hash,proto3,oneof" json:"hash,omitempty"`
+	Size       int64                  `protobuf:"varint,5,opt,name=size,proto3" json:"size,omitempty"`
+	Binary     bool                   `protobuf:"varint,6,opt,name=binary,proto3" json:"binary,omitempty"`
+	Content    []byte                 `protobuf:"bytes,7,opt,name=content,proto3" json:"content,omitempty"`
+	// Line counts the client reports for an encrypted session.
+	Additions     int32 `protobuf:"varint,8,opt,name=additions,proto3" json:"additions,omitempty"`
+	Deletions     int32 `protobuf:"varint,9,opt,name=deletions,proto3" json:"deletions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -846,6 +879,20 @@ func (x *CheckpointEntry) GetContent() []byte {
 		return x.Content
 	}
 	return nil
+}
+
+func (x *CheckpointEntry) GetAdditions() int32 {
+	if x != nil {
+		return x.Additions
+	}
+	return 0
+}
+
+func (x *CheckpointEntry) GetDeletions() int32 {
+	if x != nil {
+		return x.Deletions
+	}
+	return 0
 }
 
 type CheckpointUpload struct {
@@ -1458,10 +1505,12 @@ func (x *SessionState) GetContents() map[string][]byte {
 }
 
 type FileContent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Content       []byte                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
-	Binary        bool                   `protobuf:"varint,2,opt,name=binary,proto3" json:"binary,omitempty"`
-	Hash          string                 `protobuf:"bytes,3,opt,name=hash,proto3" json:"hash,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Content []byte                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
+	Binary  bool                   `protobuf:"varint,2,opt,name=binary,proto3" json:"binary,omitempty"`
+	Hash    string                 `protobuf:"bytes,3,opt,name=hash,proto3" json:"hash,omitempty"`
+	// True when content is sealed and the viewer has to open it with the key.
+	Encrypted     bool `protobuf:"varint,4,opt,name=encrypted,proto3" json:"encrypted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1515,6 +1564,13 @@ func (x *FileContent) GetHash() string {
 		return x.Hash
 	}
 	return ""
+}
+
+func (x *FileContent) GetEncrypted() bool {
+	if x != nil {
+		return x.Encrypted
+	}
+	return false
 }
 
 type ListCheckpointsResponse struct {
@@ -2467,7 +2523,7 @@ var File_biga_v1_biga_proto protoreflect.FileDescriptor
 
 const file_biga_v1_biga_proto_rawDesc = "" +
 	"\n" +
-	"\x12biga/v1/biga.proto\x12\abiga.v1\"\xae\x02\n" +
+	"\x12biga/v1/biga.proto\x12\abiga.v1\"\xcc\x02\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12%\n" +
@@ -2478,14 +2534,16 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x06 \x01(\tR\tupdatedAt\x12\x1e\n" +
 	"\bended_at\x18\a \x01(\tH\x01R\aendedAt\x88\x01\x01\x12\x1e\n" +
-	"\bgroup_id\x18\b \x01(\tH\x02R\agroupId\x88\x01\x01B\x0e\n" +
+	"\bgroup_id\x18\b \x01(\tH\x02R\agroupId\x88\x01\x01\x12\x1c\n" +
+	"\tencrypted\x18\t \x01(\bR\tencryptedB\x0e\n" +
 	"\f_descriptionB\v\n" +
 	"\t_ended_atB\v\n" +
-	"\t_group_id\"\x9c\x01\n" +
+	"\t_group_id\"\xba\x01\n" +
 	"\x11PutSessionRequest\x12\x19\n" +
 	"\x05title\x18\x01 \x01(\tH\x00R\x05title\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x02 \x01(\tH\x01R\vdescription\x88\x01\x01\x12\x1e\n" +
-	"\bgroup_id\x18\x03 \x01(\tH\x02R\agroupId\x88\x01\x01B\b\n" +
+	"\bgroup_id\x18\x03 \x01(\tH\x02R\agroupId\x88\x01\x01\x12\x1c\n" +
+	"\tencrypted\x18\x04 \x01(\bR\tencryptedB\b\n" +
 	"\x06_titleB\x0e\n" +
 	"\f_descriptionB\v\n" +
 	"\t_group_id\"\x8d\x01\n" +
@@ -2503,12 +2561,13 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12'\n" +
 	"\x04file\x18\x03 \x01(\v2\x11.biga.v1.FileInfoH\x00R\x04file\x126\n" +
 	"\tdirectory\x18\x04 \x01(\v2\x16.biga.v1.DirectoryInfoH\x00R\tdirectoryB\x06\n" +
-	"\x04kind\"d\n" +
+	"\x04kind\"z\n" +
 	"\bFileInfo\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x03R\x04size\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x16\n" +
 	"\x06binary\x18\x03 \x01(\bR\x06binary\x12\x18\n" +
-	"\acontent\x18\x04 \x01(\fR\acontent\"X\n" +
+	"\acontent\x18\x04 \x01(\fR\acontent\x12\x14\n" +
+	"\x05lines\x18\x05 \x01(\x05R\x05lines\"X\n" +
 	"\rDirectoryInfo\x12-\n" +
 	"\bchildren\x18\x01 \x03(\v2\x11.biga.v1.FileNodeR\bchildren\x12\x18\n" +
 	"\aignored\x18\x02 \x01(\bR\aignored\"\x95\x01\n" +
@@ -2517,7 +2576,7 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12%\n" +
 	"\x04tree\x18\x02 \x01(\v2\x11.biga.v1.FileNodeR\x04tree\x12\x1c\n" +
 	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\x12!\n" +
-	"\fsequence_num\x18\x04 \x01(\x03R\vsequenceNum\"\xde\x01\n" +
+	"\fsequence_num\x18\x04 \x01(\x03R\vsequenceNum\"\x9a\x02\n" +
 	"\x0fCheckpointEntry\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x124\n" +
 	"\vchange_type\x18\x02 \x01(\x0e2\x13.biga.v1.ChangeTypeR\n" +
@@ -2526,7 +2585,9 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"\x04hash\x18\x04 \x01(\tH\x00R\x04hash\x88\x01\x01\x12\x12\n" +
 	"\x04size\x18\x05 \x01(\x03R\x04size\x12\x16\n" +
 	"\x06binary\x18\x06 \x01(\bR\x06binary\x12\x18\n" +
-	"\acontent\x18\a \x01(\fR\acontentB\a\n" +
+	"\acontent\x18\a \x01(\fR\acontent\x12\x1c\n" +
+	"\tadditions\x18\b \x01(\x05R\tadditions\x12\x1c\n" +
+	"\tdeletions\x18\t \x01(\x05R\tdeletionsB\a\n" +
 	"\x05_hash\"\x83\x01\n" +
 	"\x10CheckpointUpload\x12\x1d\n" +
 	"\n" +
@@ -2594,11 +2655,12 @@ const file_biga_v1_biga_proto_rawDesc = "" +
 	"\rContentsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01B\v\n" +
-	"\t_snapshot\"S\n" +
+	"\t_snapshot\"q\n" +
 	"\vFileContent\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\fR\acontent\x12\x16\n" +
 	"\x06binary\x18\x02 \x01(\bR\x06binary\x12\x12\n" +
-	"\x04hash\x18\x03 \x01(\tR\x04hash\"W\n" +
+	"\x04hash\x18\x03 \x01(\tR\x04hash\x12\x1c\n" +
+	"\tencrypted\x18\x04 \x01(\bR\tencrypted\"W\n" +
 	"\x17ListCheckpointsResponse\x12<\n" +
 	"\vcheckpoints\x18\x01 \x03(\v2\x1a.biga.v1.CheckpointSummaryR\vcheckpoints\"J\n" +
 	"\x13FileHistoryResponse\x123\n" +

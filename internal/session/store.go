@@ -34,6 +34,9 @@ type Record struct {
 	// ShareLink is the viewer link the server reported, if it knows its
 	// public address.
 	ShareLink string `json:"shareUrl,omitzero"`
+	// Key is the secret an encrypted session's content is sealed with. The
+	// server never sees it; it travels in the share link.
+	Key string `json:"key,omitzero"`
 	// PID and LastSeenAt identify the process broadcasting the session. Both
 	// are cleared when the broadcast stops.
 	PID        int       `json:"pid,omitzero"`
@@ -42,10 +45,20 @@ type Record struct {
 
 // ShareURL is the viewer URL for the session.
 func (r Record) ShareURL() string {
-	if r.ShareLink != "" {
-		return r.ShareLink
+	link := r.ShareLink
+	if link == "" {
+		link = ShareURL(r.APIURL, r.SessionID)
 	}
-	return ShareURL(r.APIURL, r.SessionID)
+	return WithKey(link, r.Key)
+}
+
+// WithKey puts an encrypted session's key in the link's fragment, which
+// browsers keep to themselves. An empty key leaves the link as it is.
+func WithKey(link, key string) string {
+	if key == "" {
+		return link
+	}
+	return link + "#k=" + key
 }
 
 // ShareURL is the viewer URL for a session on the given server.

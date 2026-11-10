@@ -116,7 +116,7 @@ func (b *Broadcast) uploadBlobs(ctx context.Context, tree *api.FileNode, files [
 // false when the file is gone; the returned blob has no hash when the file
 // turned into a placeholder, such as a binary, that needs no content.
 func (b *Broadcast) readBlob(n *api.FileNode) (blob api.Blob, ok bool, err error) {
-	f, err := snapshot.ReadFile(b.root, n.Path, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan})
+	f, err := snapshot.ReadFile(b.root, n.Path, snapshot.ReadOptions{NoSecretScan: b.opts.NoSecretScan, Cipher: b.cipher})
 	if errors.Is(err, fs.ErrNotExist) {
 		return api.Blob{}, false, nil
 	}

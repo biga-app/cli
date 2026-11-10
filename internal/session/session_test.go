@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -152,6 +153,50 @@ func TestValidateID(t *testing.T) {
 	for _, bad := range []string{"", "-abc", "a/b", "a b", "../x", string(make([]byte, 65))} {
 		if err := ValidateID(bad); err == nil {
 			t.Errorf("ValidateID(%q) succeeded", bad)
+		}
+	}
+}
+
+func TestShareURLCarriesTheKeyInTheFragment(t *testing.T) {
+	rec := Record{SessionID: "abc", APIURL: "https://biga.example/", Key: "KEYTEXT"}
+	if got := rec.ShareURL(); got != "https://biga.example/session/abc#k=KEYTEXT" {
+		t.Errorf("ShareURL = %q", got)
+	}
+	rec.ShareLink = "https://share.example/session/abc"
+	if got := rec.ShareURL(); got != "https://share.example/session/abc#k=KEYTEXT" {
+		t.Errorf("ShareURL with a server link = %q", got)
+	}
+	rec.Key = ""
+	if got := rec.ShareURL(); got != "https://share.example/session/abc" {
+		t.Errorf("an unencrypted link has no fragment: %q", got)
+	}
+	if WithKey("https://x/y", "") != "https://x/y" {
+		t.Error("an empty key leaves the link alone")
+	}
+}
+
+func TestTheKeyIsSavedInTheRegistryFileOnlyThisUserCanRead(t *testing.T) {
+	home := t.TempDir()
+	s := NewStore(home)
+	dir := t.TempDir()
+	if err := s.Save(Record{RootDir: dir, SessionID: "abc", Token: "bgs_x", Key: "KEYTEXT"}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.Lookup(dir)
+	if err != nil || !ok || got.Key != "KEYTEXT" {
+		t.Fatalf("lookup = %+v, %v, %v", got, ok, err)
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	entries, _ := os.ReadDir(home)
+	for _, e := range entries {
+		if e.Name() != "sessions.json" {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.Mode().Perm()&0o077 != 0 {
+			t.Errorf("sessions.json mode = %v, %v", info.Mode(), err)
 		}
 	}
 }

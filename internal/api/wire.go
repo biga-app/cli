@@ -11,7 +11,7 @@ import (
 )
 
 func putSessionToPB(in CreateSessionInput) *bigav1.PutSessionRequest {
-	req := &bigav1.PutSessionRequest{}
+	req := &bigav1.PutSessionRequest{Encrypted: in.Encrypted}
 	if in.Title != "" {
 		req.Title = &in.Title
 	}
@@ -42,7 +42,7 @@ func sessionFromPB(g *bigav1.SessionGrant) (*Session, error) {
 	out := &Session{
 		ID: s.GetId(), Title: s.GetTitle(), Status: statusName(s.GetStatus()),
 		CreatedAt: created, UpdatedAt: updated, GroupID: s.GroupId,
-		Token: g.GetToken(), ShareURL: g.GetShareUrl(),
+		Token: g.GetToken(), ShareURL: g.GetShareUrl(), Encrypted: s.GetEncrypted(),
 		Limits: Limits{
 			MaxSnapshotFiles:  int(g.GetLimits().GetMaxSnapshotFiles()),
 			MaxFileBytes:      g.GetLimits().GetMaxFileBytes(),
@@ -85,7 +85,7 @@ func nodeToPB(n *FileNode) *bigav1.FileNode {
 	out := &bigav1.FileNode{Name: n.Name, Path: n.Path}
 	if n.Type == NodeFile {
 		out.Kind = &bigav1.FileNode_File{File: &bigav1.FileInfo{
-			Size: n.Size, Hash: n.Hash, Binary: n.Binary, Content: []byte(n.Content),
+			Size: n.Size, Hash: n.Hash, Binary: n.Binary, Content: []byte(n.Content), Lines: int32(n.Lines),
 		}}
 		return out
 	}
@@ -108,6 +108,7 @@ func entryToPB(e CheckpointEntry) *bigav1.CheckpointEntry {
 	return &bigav1.CheckpointEntry{
 		Path: e.Path, ChangeType: changeToPB(e.ChangeType), Hash: e.Hash,
 		Size: e.Size, Binary: e.Binary, Content: []byte(e.Content),
+		Additions: int32(e.Additions), Deletions: int32(e.Deletions),
 	}
 }
 
