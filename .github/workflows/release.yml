@@ -67,7 +67,7 @@ jobs:
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
       # SLSA build provenance for every published file, verifiable with
-      # `gh attestation verify <file> --repo biga-sh/cli`.
+      # `gh attestation verify <file> --repo biga-app/cli`.
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

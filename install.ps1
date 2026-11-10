@@ -3,7 +3,7 @@
     Installs the biga CLI on Windows from its GitHub releases.
 
 .DESCRIPTION
-    irm https://raw.githubusercontent.com/biga-sh/cli/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/biga-app/cli/main/install.ps1 | iex
 
     The download is checked against the release's checksums.txt, and when
     cosign is installed, checksums.txt is checked against its Sigstore
@@ -20,7 +20,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 Set-StrictMode -Version Latest
 
-$repo = 'biga-sh/cli'
+$repo = 'biga-app/cli'
 
 # Windows PowerShell 5.1 does not enable TLS 1.2 by default.
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12

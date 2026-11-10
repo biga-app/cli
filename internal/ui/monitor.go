@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/biga-sh/cli/internal/human"
+	"github.com/biga-app/cli/internal/human"
 )
 
 // ChangeKind is how a file changed.

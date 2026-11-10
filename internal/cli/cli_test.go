@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/biga-sh/cli/internal/workspace"
+	"github.com/biga-app/cli/internal/workspace"
 )
 
 func TestResolveProjectsFromArgs(t *testing.T) {

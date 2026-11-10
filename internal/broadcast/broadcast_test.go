@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/biga-sh/cli/internal/api"
-	"github.com/biga-sh/cli/internal/config"
-	"github.com/biga-sh/cli/internal/session"
+	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/config"
+	"github.com/biga-app/cli/internal/session"
 )
 
 // fakeServer implements the session API in memory.

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs the biga CLI from its GitHub releases, on macOS, Linux, or FreeBSD.
 #
-#   curl -fsSL https://raw.githubusercontent.com/biga-sh/cli/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/biga-app/cli/main/install.sh | sh
 #
 # The download is checked against the release's checksums.txt, and when cosign
 # is installed, checksums.txt is checked against its Sigstore signature.
@@ -12,7 +12,7 @@
 #   BIGA_RELEASE_URL  base URL serving a release's files, for testing
 set -eu
 
-repo="biga-sh/cli"
+repo="biga-app/cli"
 
 say() { printf '%s\n' "$*" >&2; }
 fail() {

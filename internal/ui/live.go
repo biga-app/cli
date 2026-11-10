@@ -12,8 +12,8 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/biga-sh/cli/internal/browser"
-	"github.com/biga-sh/cli/internal/human"
+	"github.com/biga-app/cli/internal/browser"
+	"github.com/biga-app/cli/internal/human"
 )
 
 const (

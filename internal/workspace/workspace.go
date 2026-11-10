@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/biga-sh/cli/internal/session"
+	"github.com/biga-app/cli/internal/session"
 )
 
 // FileName is the workspace file looked up in the working directory.

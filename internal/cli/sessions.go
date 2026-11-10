@@ -13,10 +13,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/biga-sh/cli/internal/browser"
-	"github.com/biga-sh/cli/internal/human"
-	"github.com/biga-sh/cli/internal/session"
-	"github.com/biga-sh/cli/internal/ui"
+	"github.com/biga-app/cli/internal/browser"
+	"github.com/biga-app/cli/internal/human"
+	"github.com/biga-app/cli/internal/session"
+	"github.com/biga-app/cli/internal/ui"
 )
 
 const (

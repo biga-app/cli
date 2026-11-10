@@ -11,7 +11,7 @@ make lint   # golangci-lint run ./...
 make build  # ./biga
 ```
 
-Run it against a local copy of [the server](https://github.com/biga-sh/website)
+Run it against a local copy of [the server](https://github.com/biga-app/website)
 (`http://localhost:3000` is the default), or point it elsewhere with
 `BIGA_API_URL`.
 

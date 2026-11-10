@@ -15,13 +15,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/biga-sh/cli/internal/api"
-	"github.com/biga-sh/cli/internal/config"
-	"github.com/biga-sh/cli/internal/human"
-	"github.com/biga-sh/cli/internal/ignore"
-	"github.com/biga-sh/cli/internal/session"
-	"github.com/biga-sh/cli/internal/snapshot"
-	"github.com/biga-sh/cli/internal/watch"
+	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/config"
+	"github.com/biga-app/cli/internal/human"
+	"github.com/biga-app/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/session"
+	"github.com/biga-app/cli/internal/snapshot"
+	"github.com/biga-app/cli/internal/watch"
 )
 
 const (

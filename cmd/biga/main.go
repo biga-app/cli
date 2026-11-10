@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/biga-sh/cli/internal/cli"
+	"github.com/biga-app/cli/internal/cli"
 )
 
 func main() {

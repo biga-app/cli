@@ -16,9 +16,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/biga-sh/cli/internal/api"
-	"github.com/biga-sh/cli/internal/ignore"
-	"github.com/biga-sh/cli/internal/snapshot"
+	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/snapshot"
 )
 
 // maxCheckpointBytes keeps each upload under the server's default 8 MB

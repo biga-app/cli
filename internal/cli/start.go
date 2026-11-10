@@ -14,14 +14,14 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/biga-sh/cli/internal/api"
-	"github.com/biga-sh/cli/internal/broadcast"
-	"github.com/biga-sh/cli/internal/browser"
-	"github.com/biga-sh/cli/internal/config"
-	"github.com/biga-sh/cli/internal/human"
-	"github.com/biga-sh/cli/internal/session"
-	"github.com/biga-sh/cli/internal/ui"
-	"github.com/biga-sh/cli/internal/workspace"
+	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/broadcast"
+	"github.com/biga-app/cli/internal/browser"
+	"github.com/biga-app/cli/internal/config"
+	"github.com/biga-app/cli/internal/human"
+	"github.com/biga-app/cli/internal/session"
+	"github.com/biga-app/cli/internal/ui"
+	"github.com/biga-app/cli/internal/workspace"
 )
 
 // shutdownTimeout bounds how long stopping waits for final uploads.

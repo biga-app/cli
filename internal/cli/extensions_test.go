@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/biga-sh/cli/internal/session"
-	"github.com/biga-sh/cli/internal/ui"
+	"github.com/biga-app/cli/internal/session"
+	"github.com/biga-app/cli/internal/ui"
 )
 
 func TestExtensionCommandsUseSavedSessionOwner(t *testing.T) {

@@ -51,7 +51,7 @@ func WithAccessKey(key string) Option {
 	return func(cl *Client) { cl.accessKey = key }
 }
 
-// New returns a client for the server at baseURL, e.g. "https://biga.sh".
+// New returns a client for the server at baseURL, e.g. "https://biga.n10nce.dev".
 func New(baseURL string, opts ...Option) *Client {
 	c := &Client{
 		baseURL:   strings.TrimRight(baseURL, "/"),

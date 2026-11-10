@@ -20,9 +20,9 @@ import (
 
 const (
 	// ReleasesURL is where users download new versions.
-	ReleasesURL = "https://github.com/biga-sh/cli/releases/latest"
+	ReleasesURL = "https://github.com/biga-app/cli/releases/latest"
 
-	latestReleaseAPI = "https://api.github.com/repos/biga-sh/cli/releases/latest"
+	latestReleaseAPI = "https://api.github.com/repos/biga-app/cli/releases/latest"
 	checkInterval    = 24 * time.Hour
 	fetchTimeout     = 5 * time.Second
 )

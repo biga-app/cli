@@ -1,7 +1,7 @@
 # The version lives in internal/version; `make build VERSION=1.2.3` overrides it.
 LDFLAGS := -s -w
 ifdef VERSION
-LDFLAGS += -X github.com/biga-sh/cli/internal/version.version=$(VERSION)
+LDFLAGS += -X github.com/biga-app/cli/internal/version.version=$(VERSION)
 endif
 
 .PHONY: build install test lint fmt tidy snapshot

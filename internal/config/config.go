@@ -16,7 +16,7 @@ import (
 // DefaultAPIURL is the server used when BIGA_API_URL is unset. Release builds
 // override it at link time:
 //
-//	go build -ldflags "-X github.com/biga-sh/cli/internal/config.DefaultAPIURL=https://example.com"
+//	go build -ldflags "-X github.com/biga-app/cli/internal/config.DefaultAPIURL=https://example.com"
 var DefaultAPIURL = "http://localhost:3000"
 
 // Environment variables read by [Load].

@@ -1,4 +1,4 @@
-module github.com/biga-sh/cli
+module github.com/biga-app/cli
 
 go 1.26.0
 

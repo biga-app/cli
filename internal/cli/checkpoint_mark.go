@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/biga-sh/cli/internal/api"
+	"github.com/biga-app/cli/internal/api"
 )
 
 func (a *app) checkpointCmd() *cobra.Command {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/biga-sh/cli/internal/api"
-	"github.com/biga-sh/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/ignore"
 )
 
 func writeFiles(t *testing.T, root string, files map[string]string) {

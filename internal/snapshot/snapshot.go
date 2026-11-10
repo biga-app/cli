@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/biga-sh/cli/internal/api"
-	"github.com/biga-sh/cli/internal/ignore"
+	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/ignore"
 )
 
 // ReadConcurrency bounds how many files are read at once, so a large tree

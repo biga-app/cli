@@ -15,12 +15,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/biga-sh/cli/internal/api"
-	"github.com/biga-sh/cli/internal/config"
-	"github.com/biga-sh/cli/internal/session"
-	"github.com/biga-sh/cli/internal/ui"
-	"github.com/biga-sh/cli/internal/update"
-	"github.com/biga-sh/cli/internal/version"
+	"github.com/biga-app/cli/internal/api"
+	"github.com/biga-app/cli/internal/config"
+	"github.com/biga-app/cli/internal/session"
+	"github.com/biga-app/cli/internal/ui"
+	"github.com/biga-app/cli/internal/update"
+	"github.com/biga-app/cli/internal/version"
 )
 
 // Exit codes.
