@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -17,6 +18,13 @@ const (
 	// lockTimeout bounds how long a process waits for the lock.
 	lockTimeout = 3 * time.Second
 )
+
+// contended reports whether a failed Mkdir means another process holds the
+// lock. Windows answers "access denied" instead of "exists" while a lock
+// directory that was just removed is still being deleted.
+func contended(err error) bool {
+	return errors.Is(err, fs.ErrExist) || (runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission))
+}
 
 func (s *Store) lockPath() string { return filepath.Join(s.home, "sessions.lock") }
 
@@ -37,7 +45,7 @@ func (s *Store) withLock(fn func() error) error {
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, fs.ErrExist) {
+		if !contended(err) {
 			return fmt.Errorf("acquire registry lock: %w", err)
 		}
 		if info, statErr := os.Stat(lock); statErr == nil && time.Since(info.ModTime()) > staleLockAge {
@@ -46,7 +54,7 @@ func (s *Store) withLock(fn func() error) error {
 			continue
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for the session registry lock; if no other biga process is running, delete %s and retry", lock)
+			return fmt.Errorf("timed out waiting for the session registry lock (%w); if no other biga process is running, delete %s and retry", err, lock)
 		}
 		time.Sleep(50*time.Millisecond + rand.N(50*time.Millisecond))
 	}
