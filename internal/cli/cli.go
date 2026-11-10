@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/biga-app/cli/internal/api"
 	"github.com/biga-app/cli/internal/config"
+	"github.com/biga-app/cli/internal/h3"
 	"github.com/biga-app/cli/internal/session"
 	"github.com/biga-app/cli/internal/ui"
 	"github.com/biga-app/cli/internal/update"
@@ -83,6 +85,8 @@ type app struct {
 	apiURL string // --api-url
 	cfg    config.Config
 	store  *session.Store
+	// transport is shared by every client so HTTP/3 connections are reused.
+	transport http.RoundTripper
 }
 
 func (a *app) rootCmd() *cobra.Command {
@@ -150,7 +154,14 @@ func (a *app) setup() error {
 
 func (a *app) client(baseURL string) *api.Client {
 	ua := fmt.Sprintf("biga-cli/%s (%s/%s)", version.String(), runtime.GOOS, runtime.GOARCH)
-	return api.New(baseURL, api.WithUserAgent(ua), api.WithAccessKey(a.cfg.AccessKey))
+	if a.transport == nil {
+		a.transport = h3.New(http.DefaultTransport, h3.Options{Mode: h3.ParseMode(a.cfg.HTTP3)})
+	}
+	return api.New(baseURL,
+		api.WithUserAgent(ua),
+		api.WithAccessKey(a.cfg.AccessKey),
+		api.WithHTTPClient(&http.Client{Transport: a.transport}),
+	)
 }
 
 // notifyUpdate mentions a newer release learned of by an earlier run, and

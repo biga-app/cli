@@ -89,3 +89,15 @@ func TestNormalizeAPIURL(t *testing.T) {
 		t.Errorf("got %q, %v", got, err)
 	}
 }
+
+func TestLoadHTTP3(t *testing.T) {
+	for in, want := range map[string]string{"": "auto", "auto": "auto", "nonsense": "auto", "on": "on", "True": "on", "off": "off", "0": "off"} {
+		cfg, err := Load(env(map[string]string{EnvHome: "/h", EnvHTTP3: in}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.HTTP3 != want {
+			t.Errorf("%s=%q gives %q, want %q", EnvHTTP3, in, cfg.HTTP3, want)
+		}
+	}
+}

@@ -30,6 +30,7 @@ const (
 	EnvHeartbeatMS   = "BIGA_HEARTBEAT_MS"
 	EnvNoUpdateCheck = "BIGA_NO_UPDATE_CHECK"
 	EnvSecretScan    = "BIGA_SECRET_SCAN"
+	EnvHTTP3         = "BIGA_HTTP3"
 )
 
 // Timing holds the knobs that dominate the latency between a save and a
@@ -63,6 +64,9 @@ type Config struct {
 	// SecretScan reports whether files whose content looks like a secret are
 	// withheld. BIGA_SECRET_SCAN=off turns it off.
 	SecretScan bool
+	// HTTP3 is "auto" (use HTTP/3 once the server advertises it), "on" (try it
+	// first) or "off".
+	HTTP3 string
 }
 
 // Load reads the configuration using getenv, normally [os.Getenv].
@@ -93,7 +97,19 @@ func Load(getenv func(string) string) (Config, error) {
 		Heartbeat:   millis(getenv(EnvHeartbeatMS), 10*time.Second),
 		UpdateCheck: getenv(EnvNoUpdateCheck) == "" && getenv("CI") == "",
 		SecretScan:  !strings.EqualFold(strings.TrimSpace(getenv(EnvSecretScan)), "off"),
+		HTTP3:       http3Setting(getenv(EnvHTTP3)),
 	}, nil
+}
+
+// http3Setting normalizes a BIGA_HTTP3 value to auto, on or off.
+func http3Setting(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "on", "1", "true", "yes":
+		return "on"
+	case "off", "0", "false", "no":
+		return "off"
+	}
+	return "auto"
 }
 
 // NormalizeAPIURL validates an http(s) base URL and strips trailing slashes.
