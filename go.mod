@@ -12,10 +12,10 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/quic-go/quic-go v0.65.0
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/mod v0.42.0
-	golang.org/x/sync v0.24.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/term v0.47.0
+	golang.org/x/mod v0.43.0
+	golang.org/x/sync v0.25.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/term v0.48.0
 	google.golang.org/protobuf v1.36.11
 )
 
